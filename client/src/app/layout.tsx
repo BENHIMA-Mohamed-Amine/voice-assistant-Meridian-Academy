@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Meridian Academy",
+  title: "Voice Assistant",
   description: "Book a training demo with Meridian Academy.",
 };
 
