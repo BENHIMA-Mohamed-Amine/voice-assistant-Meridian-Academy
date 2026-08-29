@@ -2,6 +2,32 @@ import { Agent, dedent, tool } from '@livekit/agents';
 import * as openai from '@livekit/agents-plugin-openai';
 import { z } from 'zod';
 
+// Below this, a transcript is flagged as low-confidence in the note injected into the LLM's
+// context (see buildAudioQualityNote). Starting point per Soniox/industry convention;
+// calibrate against real clean vs. noisy samples.
+const TRANSCRIPT_CONFIDENCE_THRESHOLD = 0.6;
+
+// Pure decision logic, pulled out of onUserTurnCompleted so it's unit-testable without faking
+// a whole session/STT pipeline. Rather than a deterministic fallback that skips the LLM
+// (bypasses its own judgment, and can't naturally vary its own phrasing), this builds a
+// factual, per-turn note injected into the chat context — the LLM decides how to act on it,
+// guided by the ## Clarity section below. `noisy` and `lowConfidence` are independent signals
+// composed together, not one overriding the other: noisy always gets mentioned; low
+// confidence always gets a repeat request. Returns undefined when neither applies.
+export function buildAudioQualityNote(noisy: boolean, lowConfidence: boolean): string | undefined {
+  const parts: string[] = [];
+  if (noisy) {
+    parts.push("There's background noise on the visitor's end right now — mention that to them.");
+  }
+  if (lowConfidence) {
+    parts.push(
+      "The last transcript came through with low confidence — ask the visitor to repeat what they said rather than guessing.",
+    );
+  }
+  if (parts.length === 0) return undefined;
+  return `Audio quality note: ${parts.join(' ')}`;
+}
+
 const PERSONAL_EMAIL_DOMAINS = new Set([
   'gmail.com',
   'yahoo.com',
@@ -20,8 +46,10 @@ function isWorkEmail(email: string): boolean {
   return domain !== undefined && !PERSONAL_EMAIL_DOMAINS.has(domain);
 }
 
-// Build a custom voice AI assistant with the functional `Agent.create` API
-export function createAgent() {
+// Build a custom voice AI assistant with the functional `Agent.create` API.
+// `isEnvironmentNoisy` is a getter (not a snapshot) so onUserTurnCompleted below always reads
+// the latest client-reported noise state — see the 'lk.noise' listener in main.ts.
+export function createAgent(isEnvironmentNoisy: () => boolean) {
   const groqApiKey = process.env.GROQ_API_KEY;
   if (!groqApiKey) throw new Error('GROQ_API_KEY is required');
 
@@ -47,7 +75,7 @@ export function createAgent() {
 
         ## Clarity
 
-        If you didn't clearly hear what the visitor said, ask them to repeat it rather than guessing. Acting on a guess risks collecting the wrong information.
+        If you didn't clearly hear what the visitor said, ask them to repeat it rather than guessing. Acting on a guess risks collecting the wrong information. You may occasionally see an "Audio quality note" in context — that's a real-time signal about background noise or transcription confidence, not something the visitor said, so never read it aloud or treat it as their message. Follow it plainly: if it says there's background noise, mention that to the visitor briefly, in your own words, varying how you phrase it turn to turn rather than repeating the same line; if it says to ask for a repeat, do that instead of guessing.
 
         ## Output rules
 
@@ -89,6 +117,43 @@ export function createAgent() {
     // 3. Add `import * as openai from '@livekit/agents-plugin-openai'` to the top of this file
     // 4. Replace the llm option with:
     //    llm: new openai.realtime.RealtimeModel({ voice: 'marin' }),
+
+    // Fires after the user's turn is transcribed, before the LLM is called. Rather than
+    // deterministically skipping the LLM on bad audio, this injects a factual note into the
+    // turn's context (see buildAudioQualityNote and the ## Clarity prompt section) so the LLM
+    // handles it naturally — asking to repeat, or suggesting a quieter environment, in its own
+    // words. Not persisted beyond this turn (no updateChatCtx call), since it's a live
+    // condition, not a fact about the conversation.
+    onUserTurnCompleted(_ctx, chatCtx, newMessage) {
+      const confidence = newMessage.transcriptConfidence;
+      const noisy = isEnvironmentNoisy();
+      const lowConfidence = confidence !== undefined && confidence < TRANSCRIPT_CONFIDENCE_THRESHOLD;
+      console.log('transcript confidence check:', { confidence, isNoisy: noisy, lowConfidence });
+
+      const note = buildAudioQualityNote(noisy, lowConfidence);
+      if (note) {
+        chatCtx.addMessage({ role: 'assistant', content: note });
+      }
+    },
+
+    // Logs the exact context handed to the LLM right before inference — the real prompt,
+    // including any audio-quality note injected above, not just what the transcript
+    // logging shows. Debug-only; remove once the note-injection behavior is confirmed.
+    async *llmNode(ctx, chatCtx, toolCtx, modelSettings) {
+      console.log(
+        'LLM prompt (chatCtx items about to be sent):',
+        chatCtx.items.map((item) =>
+          item.type === 'message'
+            ? { type: 'message', role: item.role, content: item.textContent }
+            : { type: item.type },
+        ),
+      );
+      const stream = await Agent.default.llmNode(ctx.agent, chatCtx, toolCtx, modelSettings);
+      if (!stream) return;
+      for await (const chunk of stream) {
+        yield chunk;
+      }
+    },
 
     tools: [
       tool({

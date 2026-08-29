@@ -6,7 +6,6 @@ import {
   SessionProvider,
   useAgent,
   useDataChannel,
-  useIsSpeaking,
   useLocalParticipant,
   useMultibandTrackVolume,
   useSession,
@@ -22,7 +21,14 @@ const NOISE_LEVEL_SCALE = 1.8;
 // "sustained for a debounce window" per architecture-decisions.md, to avoid a brief
 // spike (a door slam) firing the over-threshold flag.
 const NOISE_DEBOUNCE_MS = 700;
-const DEFAULT_NOISE_THRESHOLD_PCT = 50;
+const DEFAULT_NOISE_THRESHOLD_PCT = 60;
+// Time constants (ms) for the noise-floor tracker below — rise is damped far more than fall,
+// so brief voice bursts barely move it while sustained noise still climbs. Fall can't be a
+// true instant snap: real audio jitters up and down constantly even while "loud" overall, so
+// an instant fall would reset to every downward blip and the floor would never accumulate a
+// rise at all. A short fall time constant absorbs that jitter while still feeling immediate.
+const NOISE_FLOOR_RISE_TAU_MS = 2000;
+const NOISE_FLOOR_FALL_TAU_MS = 250;
 
 // Mirrors LatencyPayload in agent/src/main.ts, published on the 'lk.metrics' data channel topic.
 interface LatencyMetrics {
@@ -110,18 +116,33 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
 
   // Client-side noise meter — a supporting UI signal, not the "please repeat" trigger
   // itself (that stays gated server-side on STT confidence, per architecture-decisions.md).
-  // Raw mic RMS can't tell the user's own voice apart from background noise, so we freeze
-  // the reading while LiveKit's speech-activity detector says the user is talking — the
-  // meter holds its last true ambient value instead of spiking on your own voice.
+  // Raw mic RMS can't tell the user's own voice apart from background noise. This used to
+  // freeze the reading while LiveKit's `isSpeaking` flag was true, but that flag round-trips
+  // through the server's active-speaker system — it lags real audio by enough that voice
+  // bursts leaked into the reading before the freeze engaged.
+  //
+  // Instead: a noise-floor tracker (fast fall, slow rise), computed locally with no server
+  // dependency. Both directions are exponentially smoothed rather than the fall being a true
+  // instant snap — real audio jitters up and down constantly even while sustained-loud, so an
+  // instant fall would reset to every downward blip and the floor could never accumulate a
+  // rise at all (this is what made a whole Instagram reel only creep the meter to 50%, since
+  // it's constantly re-snapping to its own dips). Standard technique for estimating a noise
+  // floor from a live signal.
   const rawNoiseLevelPct = Math.round(Math.min(1, micLevel * NOISE_LEVEL_SCALE) * 100);
-  const isSpeaking = useIsSpeaking(localParticipant);
-  // Holds the last reading taken while not speaking. Updated directly during render
-  // (React's documented pattern for state derived from another value) rather than in an
-  // effect, since this needs to track every render while !isSpeaking, not just on change.
   const [noiseLevelPct, setNoiseLevelPct] = useState(0);
-  if (!isSpeaking && noiseLevelPct !== rawNoiseLevelPct) {
-    setNoiseLevelPct(rawNoiseLevelPct);
-  }
+  // Ref-based dt tracking has to live in an effect, not render — render must stay a pure
+  // function of props/state (no refs, no performance.now()).
+  const lastFloorUpdateRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const now = performance.now();
+    const dtMs = now - (lastFloorUpdateRef.current ?? now);
+    lastFloorUpdateRef.current = now;
+    setNoiseLevelPct((floor) => {
+      const tau = rawNoiseLevelPct < floor ? NOISE_FLOOR_FALL_TAU_MS : NOISE_FLOOR_RISE_TAU_MS;
+      const next = floor + (rawNoiseLevelPct - floor) * (1 - Math.exp(-dtMs / tau));
+      return Math.round(next);
+    });
+  }, [rawNoiseLevelPct]);
   const [noiseThresholdPct, setNoiseThresholdPct] = useState(DEFAULT_NOISE_THRESHOLD_PCT);
   const isOverThreshold = noiseLevelPct > noiseThresholdPct;
   const noiseBarRef = useRef<HTMLDivElement>(null);

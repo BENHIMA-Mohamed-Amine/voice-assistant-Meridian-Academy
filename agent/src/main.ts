@@ -11,6 +11,7 @@ import * as deepgram from '@livekit/agents-plugin-deepgram';
 import * as silero from '@livekit/agents-plugin-silero';
 import * as soniox from '@livekit/agents-plugin-soniox';
 // import { NoiseCancellation } from '@livekit/noise-cancellation-node'; // see inputOptions below
+import { RoomEvent } from '@livekit/rtc-node';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { createAgent } from './agent.ts';
@@ -62,6 +63,24 @@ export default defineAgent<ProcessUserData>({
   },
 
   entry: async (ctx: JobContext<ProcessUserData>) => {
+    // Client-side noise flag ('lk.noise' data channel, see VoiceWidget.tsx) — a supporting
+    // signal for the confidence-gated "please repeat" check in agent.ts's onUserTurnCompleted,
+    // not a standalone trigger. Read as a getter (not a snapshot) so the confidence check
+    // always sees the latest known state at the moment a turn completes, per
+    // architecture-decisions.md.
+    let isEnvironmentNoisy = false;
+    ctx.room.on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
+      if (topic !== 'lk.noise') return;
+      try {
+        const { overThreshold } = JSON.parse(Buffer.from(payload).toString('utf-8')) as {
+          overThreshold?: unknown;
+        };
+        isEnvironmentNoisy = overThreshold === true;
+      } catch (err) {
+        console.error('Failed to parse lk.noise payload:', err);
+      }
+    });
+
     // Set up a voice AI pipeline using Silero VAD via LiveKit Inference (no separate
     // provider API key/billing), plus the Deepgram plugin directly for STT — see the STT
     // comment below for why that one isn't on LiveKit Inference. The STT choice (Deepgram
@@ -145,7 +164,7 @@ export default defineAgent<ProcessUserData>({
 
     // Start the session, which initializes the voice pipeline and warms up the models
     await session.start({
-      agent: createAgent(),
+      agent: createAgent(() => isEnvironmentNoisy),
       room: ctx.room,
       inputOptions: {
         // Disabled — the native NC processor crashes the whole agent process with a fatal
