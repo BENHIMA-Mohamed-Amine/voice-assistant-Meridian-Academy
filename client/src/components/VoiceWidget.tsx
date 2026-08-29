@@ -333,13 +333,12 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
           }}
         >
           {[
-            // EOU/LLM TTFT/TTS TTFB are per-turn (replaced each turn); E2E is a running
-            // average across the call, per design.md — a more stable "how's this call
-            // going" number rather than one noisy per-turn value.
+            // All four are per-turn, replaced each turn. The running average lives in the
+            // header stat above instead (formatMs(latency.e2eAvgMs), labeled "AVG E2E").
             ['EOU', formatMs(latency.eouMs), 'var(--text-muted)', 'var(--text)'],
             ['LLM TTFT', formatMs(latency.llmTtftMs), 'var(--text-muted)', 'var(--text)'],
             ['TTS TTFB', formatMs(latency.ttsTtfbMs), 'var(--text-muted)', 'var(--text)'],
-            ['AVG E2E', formatMs(latency.e2eAvgMs), 'var(--accent)', 'var(--accent)'],
+            ['E2E', formatMs(latency.e2eMs), 'var(--accent)', 'var(--accent)'],
           ].map(([label, value, labelColor, valueColor]) => (
             <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               <div

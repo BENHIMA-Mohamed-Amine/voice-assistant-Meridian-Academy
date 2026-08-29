@@ -8,6 +8,11 @@ import {
   inference,
   voice,
 } from '@livekit/agents';
+import * as silero from '@livekit/agents-plugin-silero';
+// import { NoiseCancellation } from '@livekit/noise-cancellation-node'; // see inputOptions below
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { createAgent } from './agent.ts';
 
 // Mirrors the shape the client widget expects on the 'lk.metrics' data channel topic.
 // Fields are filled in incrementally as each turn's metrics become available and
@@ -19,11 +24,6 @@ interface LatencyPayload {
   e2eMs?: number;
   e2eAvgMs?: number;
 }
-import * as silero from '@livekit/agents-plugin-silero';
-// import { NoiseCancellation } from '@livekit/noise-cancellation-node'; // see inputOptions below
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'node:url';
-import { createAgent } from './agent.ts';
 
 // Load environment variables from a local file.
 // Make sure to set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET
@@ -45,9 +45,9 @@ export default defineAgent<ProcessUserData>({
     // instance — a known pnpm + TypeScript private-field quirk, not a real type mismatch.
     // minSilenceDuration defaults to 550ms — this is a hard floor on end-of-turn latency
     // that sits *before* the turn detector model even runs (VAD must first confirm silence).
-    // 250ms is the documented minimum the audio turn detector accepts; lower raises a
-    // ValueError at session start. See docs.livekit.io/agents/logic/turns/turn-detector.
-    proc.userData.vad = (await silero.VAD.load({ minSilenceDuration: 250 })) as unknown as VAD;
+    // 350ms; the documented minimum the audio turn detector accepts is 250ms (lower raises
+    // a ValueError at session start). See docs.livekit.io/agents/logic/turns/turn-detector.
+    proc.userData.vad = (await silero.VAD.load({ minSilenceDuration: 350 })) as unknown as VAD;
   },
 
   entry: async (ctx: JobContext<ProcessUserData>) => {
