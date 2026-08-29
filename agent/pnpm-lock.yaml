@@ -11,11 +11,17 @@ importers:
       '@livekit/agents':
         specifier: ^1.6.3
         version: 1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3)
+      '@livekit/agents-plugin-deepgram':
+        specifier: ~1.7.1
+        version: 1.7.1(@livekit/agents@1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3))(@livekit/rtc-node@0.13.34)
       '@livekit/agents-plugin-openai':
         specifier: ~1.7.1
         version: 1.7.1(@livekit/agents@1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3))(@livekit/rtc-node@0.13.34)(zod@4.4.3)
       '@livekit/agents-plugin-silero':
         specifier: ^1.7.1
+        version: 1.7.1(@livekit/agents@1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3))(@livekit/rtc-node@0.13.34)
+      '@livekit/agents-plugin-soniox':
+        specifier: ~1.7.1
         version: 1.7.1(@livekit/agents@1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3))(@livekit/rtc-node@0.13.34)
       '@livekit/noise-cancellation-node':
         specifier: ^0.2.0
@@ -339,6 +345,12 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
+  '@livekit/agents-plugin-deepgram@1.7.1':
+    resolution: {integrity: sha512-sL5zZWA3Ab9WZgx/8J7tSPwZusW9AIvzTaxJ+sw1mAdEcDaO6ISyme4UrtYlEF6TQRsLmdLX9fYNVJceLmOcMA==}
+    peerDependencies:
+      '@livekit/agents': 1.7.1
+      '@livekit/rtc-node': ^0.13.34
+
   '@livekit/agents-plugin-openai@1.7.1':
     resolution: {integrity: sha512-BCvp+Mx2ZkrxQIAJgbvmr/xtkQWNIPVxY2tLHiMCDo7QhOmho2dgYrZ5Mk9/5VoBROubfdRz6cguKDQcBQHVAg==}
     peerDependencies:
@@ -348,6 +360,12 @@ packages:
 
   '@livekit/agents-plugin-silero@1.7.1':
     resolution: {integrity: sha512-psdf0OLfMvYwVyM9kksI/lzqhYOrIQU0dJ2yPbn+zoW13fCFcM1hDB3JggS9WLygZg0Y7pnhRL/XG0Oa8bdRiA==}
+    peerDependencies:
+      '@livekit/agents': 1.7.1
+      '@livekit/rtc-node': ^0.13.34
+
+  '@livekit/agents-plugin-soniox@1.7.1':
+    resolution: {integrity: sha512-EdYPrH9+Qturrmuf8Xr0AKnmEK4u0xeZMJG4YcK7iKJhN9MZFZf8UUa5PtlzGSKp0CsHXtVpRLN/pNtoi38tkA==}
     peerDependencies:
       '@livekit/agents': 1.7.1
       '@livekit/rtc-node': ^0.13.34
@@ -2144,6 +2162,15 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@livekit/agents-plugin-deepgram@1.7.1(@livekit/agents@1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3))(@livekit/rtc-node@0.13.34)':
+    dependencies:
+      '@livekit/agents': 1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3)
+      '@livekit/rtc-node': 0.13.34
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   '@livekit/agents-plugin-openai@1.7.1(@livekit/agents@1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3))(@livekit/rtc-node@0.13.34)(zod@4.4.3)':
     dependencies:
       '@livekit/agents': 1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3)
@@ -2164,6 +2191,15 @@ snapshots:
       '@livekit/agents': 1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3)
       '@livekit/rtc-node': 0.13.34
       onnxruntime-node: 1.24.3
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@livekit/agents-plugin-soniox@1.7.1(@livekit/agents@1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3))(@livekit/rtc-node@0.13.34)':
+    dependencies:
+      '@livekit/agents': 1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3)
+      '@livekit/rtc-node': 0.13.34
       ws: 8.21.3
     transitivePeerDependencies:
       - bufferutil

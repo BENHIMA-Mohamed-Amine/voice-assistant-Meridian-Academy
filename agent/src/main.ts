@@ -5,10 +5,11 @@ import {
   type VAD,
   cli,
   defineAgent,
-  inference,
   voice,
 } from '@livekit/agents';
+import * as deepgram from '@livekit/agents-plugin-deepgram';
 import * as silero from '@livekit/agents-plugin-silero';
+import * as soniox from '@livekit/agents-plugin-soniox';
 // import { NoiseCancellation } from '@livekit/noise-cancellation-node'; // see inputOptions below
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +31,17 @@ interface LatencyPayload {
 // when running locally or self-hosting your agent server.
 dotenv.config({ path: '.env.local' });
 
+// Read once, after dotenv.config() above, so it's available before entry() needs it.
+// See the note on the TTS construction below for why this can't come from the plugin's own
+// default: the soniox TTS plugin captures process.env.SONIOX_API_KEY in a module-level
+// object evaluated at import time, which runs before this file's own top-level dotenv.config()
+// call — ES module imports always evaluate before the importing module's own top-level code —
+// so the plugin's default would otherwise silently capture undefined.
+const SONIOX_API_KEY = process.env.SONIOX_API_KEY;
+if (!SONIOX_API_KEY) {
+  throw new Error('SONIOX_API_KEY is not set. Add it to .env.local.');
+}
+
 // Loaded once per worker process (not per call) and reused across jobs via prewarm below.
 interface ProcessUserData {
   vad: VAD;
@@ -50,12 +62,34 @@ export default defineAgent<ProcessUserData>({
   },
 
   entry: async (ctx: JobContext<ProcessUserData>) => {
-    // Set up a voice AI pipeline using LiveKit Inference (Deepgram Flux STT + Cartesia TTS)
-    // and Silero VAD. Both run on LiveKit's own inference infra (no separate provider API
-    // key/billing) and were chosen over Soniox for lower latency — see architecture-decisions.md.
+    // Set up a voice AI pipeline using Silero VAD via LiveKit Inference (no separate
+    // provider API key/billing), plus the Deepgram plugin directly for STT — see the STT
+    // comment below for why that one isn't on LiveKit Inference. The STT choice (Deepgram
+    // over Soniox) was purely about endpointing latency; see architecture-decisions.md.
+    //
+    // TTS is Soniox — its earlier drop (see architecture-decisions.md) was about STT
+    // latency specifically, not TTS, so it's back in play here on its own merits: one
+    // model across 60+ languages (no per-language voice swap needed, unlike Cartesia,
+    // which kept defaulting to English pronunciation rules for French replies — see the
+    // git history on this file).
+    // ponytail: no `model`/`language` override — bare defaults (`tts-rt-v1-preview`, `en`,
+    // voice `Maya`), matching the last config confirmed working end-to-end (see git history:
+    // 50d1ff4). Explicitly setting `model: 'tts-rt-v2'` was tried and is silently broken —
+    // verified directly against the real API with a standalone probe script: v2 produced 0
+    // audio frames through @livekit/agents-plugin-soniox@1.7.1 (no error, just nothing),
+    // while these defaults produced 21 frames and a clean final. The plugin can't parse
+    // whatever response shape v2 returns. Risk: Soniox retires tts-rt-v1 on 2026-08-31 — if
+    // their backend then serves v2-shaped responses to v1 requests, this same silent-zero-
+    // audio bug could resurface regardless of the model string sent, since the break is in
+    // the client's response parsing, not the model name. Re-run the probe (or check for a
+    // plugin update) before or right after that date.
+    const tts = new soniox.TTS({
+      apiKey: SONIOX_API_KEY,
+    });
+
     const session = new voice.AgentSession({
       // Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand.
-      // `multi` auto-detects per segment (Flux's multilingual set covers English + French,
+      // `flux-general-multi` auto-detects language per segment (covers English + French,
       // among others) so the agent doesn't need to know in advance which language the visitor will use.
       //
       // Whatever STT you use with the default audio TurnDetector, you're paying
@@ -66,19 +100,17 @@ export default defineAgent<ProcessUserData>({
       // multi-second turn latency with nova-3, and Soniox hit the same wall for the same
       // reason. Flux collapses this: its own phrase-endpointing model (acoustic + semantic)
       // *is* the end-of-turn signal, so turnDetection: 'stt' below skips the wait entirely.
-      stt: new inference.STT({
-        model: 'deepgram/flux-general-multi',
-        language: 'multi',
+      //
+      // On the direct plugin (own DEEPGRAM_API_KEY), not `inference.STT`: verified in the
+      // plugin's own source that Flux's periodic `Update` events map to INTERIM_TRANSCRIPT,
+      // giving live-updating captions. LiveKit Inference's hosted Flux gateway was tested and
+      // did not forward those as interims — only the final transcript landed client-side.
+      stt: new deepgram.STTv2({
+        model: 'flux-general-multi',
       }),
 
       // Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear.
-      // No `language` here — Cartesia's sonic-3 voices are cross-lingual (the same voice ID
-      // renders any of its 40+ supported languages), and the agent switches between English
-      // and French per the prompt's Language rule, so hardcoding one would fight that.
-      tts: new inference.TTS({
-        model: 'cartesia/sonic-3',
-        voice: 'a167e0f3-df7e-4d52-a9c3-f949145efdab', // "Blake" — suggested voice, see docs.livekit.io/agents/models/tts/cartesia
-      }),
+      tts,
 
       // Voice activity detection (VAD) — distinguishes speech from silence/noise.
       // Prewarmed above and reused from proc.userData rather than loaded fresh per call.
@@ -155,6 +187,15 @@ export default defineAgent<ProcessUserData>({
           console.error('Failed to publish latency metrics:', err);
         });
     };
+
+    // Retarget the TTS to whichever language the visitor just spoke, so the agent's reply
+    // (which follows the same language per the prompt's Language rule) is synthesized with
+    // the right pronunciation instead of Cartesia's 'en' default. See the `tts` comment above.
+    session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (ev) => {
+      if (ev.isFinal && ev.language) {
+        tts.updateOptions({ language: ev.language });
+      }
+    });
 
     session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (ev) => {
       if (ev.item.type !== 'message') return;

@@ -22,6 +22,9 @@ function isWorkEmail(email: string): boolean {
 
 // Build a custom voice AI assistant with the functional `Agent.create` API
 export function createAgent() {
+  const groqApiKey = process.env.GROQ_API_KEY;
+  if (!groqApiKey) throw new Error('GROQ_API_KEY is required');
+
   return Agent.create({
     instructions: dedent`
         # Meridian Academy Voice Assistant
@@ -63,12 +66,19 @@ export function createAgent() {
     // See all available models at https://docs.livekit.io/agents/models/llm/
     // Groq-hosted Qwen — not part of LiveKit Inference's managed layer, so this goes through
     // the OpenAI-compat plugin with its own GROQ_API_KEY/billing.
-    llm: openai.LLM.withGroq({
+    // Built with the base LLM constructor (mirroring what withGroq does internally) instead of
+    // withGroq itself, because withGroq's opts type is narrower and doesn't accept
+    // reasoningEffort. Qwen3 is a hybrid reasoning model — reasoningEffort: 'none' puts it in
+    // instruct mode instead of thinking mode, since this is simple slot-filling dialogue, not
+    // math/coding, and thinking mode's extra tokens were adding latency for no benefit here.
+    llm: new openai.LLM({
       // "qwen3-32b" isn't in Groq's current model catalog — verified against Groq's own
       // /v1/models endpoint, which lists qwen/qwen3.6-27b and qwen/qwen3.8-27b (27B, not 32B).
       // Using the newer of the two.
-      // withGroq's opts type is narrower than withFireworks's — no strictToolSchema/topP here.
       model: 'qwen/qwen3.8-27b',
+      baseURL: 'https://api.groq.com/openai/v1',
+      apiKey: groqApiKey,
+      reasoningEffort: 'none',
     }),
 
     // To use a realtime model instead of a voice pipeline, replace the LLM
