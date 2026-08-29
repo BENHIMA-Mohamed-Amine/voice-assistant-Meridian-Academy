@@ -1,0 +1,514 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import {
+  RoomAudioRenderer,
+  SessionProvider,
+  useAgent,
+  useLocalParticipant,
+  useMultibandTrackVolume,
+  useSession,
+  useSessionMessages,
+} from '@livekit/components-react';
+import { TokenSource, type LocalAudioTrack } from 'livekit-client';
+
+const TOKEN_SOURCE = TokenSource.endpoint('/api/token');
+
+// Hardcoded for now — noise level/threshold have no real Web Audio wiring yet, and the
+// latency breakdown isn't forwarded from the agent over the data channel yet.
+const NOISE_LEVEL_PCT = 32;
+const NOISE_THRESHOLD_PCT = 50;
+const LATENCY = { eou: 320, llmTtft: 410, ttsTtfb: 180, e2e: 910 };
+
+const STATE_LABELS: Record<string, string> = {
+  disconnected: 'Not connected',
+  connecting: 'Connecting…',
+  'pre-connect-buffering': 'Connecting…',
+  failed: 'Connection failed',
+  initializing: 'Getting ready…',
+  idle: 'Ready when you are',
+  listening: 'Listening…',
+  thinking: 'Thinking…',
+  speaking: 'Speaking…',
+};
+
+const ACTIVE_STATES = new Set(['listening', 'thinking', 'speaking']);
+
+const STATE_DOT_COLORS: Record<string, string> = {
+  listening: 'var(--state-listening)',
+  thinking: 'var(--state-thinking)',
+  speaking: 'var(--state-speaking)',
+};
+
+export default function VoiceWidget() {
+  const session = useSession(TOKEN_SOURCE, { agentName: 'agent' });
+  const [isOpen, setIsOpen] = useState(false);
+
+  // Only end the session on unmount if it was actually started — connecting is deferred
+  // until the visitor opens the widget from the launcher, not on page load.
+  useEffect(() => {
+    return () => {
+      session.end();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleClose = () => {
+    session.end();
+    setIsOpen(false);
+  };
+
+  const handleOpen = () => {
+    session.start();
+    setIsOpen(true);
+  };
+
+  return (
+    <SessionProvider session={session}>
+      {isOpen ? <WidgetPanel onClose={handleClose} /> : <Launcher onOpen={handleOpen} />}
+      <RoomAudioRenderer />
+    </SessionProvider>
+  );
+}
+
+function WidgetPanel({ onClose }: { onClose: () => void }) {
+  const agent = useAgent();
+  const { messages } = useSessionMessages();
+  const { isMicrophoneEnabled, localParticipant, microphoneTrack } = useLocalParticipant();
+  const micVolumes = useMultibandTrackVolume(microphoneTrack?.track as LocalAudioTrack | undefined, {
+    bands: 5,
+  });
+  const [isCloseHovered, setIsCloseHovered] = useState(false);
+  const transcriptRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight });
+  }, [messages]);
+
+  const stateLabel = STATE_LABELS[agent.state] ?? STATE_LABELS.idle;
+  const isActive = ACTIVE_STATES.has(agent.state);
+  const dotColor = STATE_DOT_COLORS[agent.state] ?? 'var(--text-muted)';
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        minHeight: '100vh',
+        boxSizing: 'border-box',
+        padding: 40,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--bg-page)',
+      }}
+    >
+      <div
+        style={{
+          width: 380,
+          height: 640,
+          borderRadius: 20,
+          overflow: 'hidden',
+          background: 'var(--panel-bg)',
+          boxShadow: '0 24px 60px oklch(0 0 0 / 0.35), 0 2px 10px oklch(0 0 0 / 0.25)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '16px 18px',
+            background: 'var(--panel-bg-2)',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              background: 'var(--accent)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 3l2 7 7 2-7 2-2 7-2-7-7-2 7-2z"
+                fill="var(--accent-ink)"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 600,
+                fontSize: 16,
+                color: 'var(--text)',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              Meridian Academy
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Book a training demo</div>
+          </div>
+          <div style={{ flexGrow: 1 }} />
+          <button
+            onClick={onClose}
+            onMouseEnter={() => setIsCloseHovered(true)}
+            onMouseLeave={() => setIsCloseHovered(false)}
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              border: 'none',
+              background: isCloseHovered ? 'oklch(0.62 0.19 25 / 0.22)' : 'transparent',
+              transition: 'background-color 200ms',
+            }}
+            aria-label="End conversation"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M6 6l12 12M18 6L6 18"
+                stroke={isCloseHovered ? 'var(--warn)' : 'var(--text-muted)'}
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+
+        {/* Status row */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 18px',
+            background: 'var(--panel-bg)',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          <div
+            className={isActive ? 'glow-pulse' : undefined}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              flexShrink: 0,
+              background: dotColor,
+              color: dotColor,
+            }}
+          />
+          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{stateLabel}</div>
+          <div style={{ flexGrow: 1 }} />
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text)' }}>
+            {LATENCY.e2e}ms e2e
+          </div>
+        </div>
+
+        {/* Latency breakdown */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+            padding: '9px 18px',
+            background: 'var(--panel-bg-2)',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          {[
+            ['EOU', `${LATENCY.eou}ms`, 'var(--text-muted)', 'var(--text)'],
+            ['LLM TTFT', `${LATENCY.llmTtft}ms`, 'var(--text-muted)', 'var(--text)'],
+            ['TTS TTFB', `${LATENCY.ttsTtfb}ms`, 'var(--text-muted)', 'var(--text)'],
+            ['E2E', `${LATENCY.e2e}ms`, 'var(--accent)', 'var(--accent)'],
+          ].map(([label, value, labelColor, valueColor]) => (
+            <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <div
+                style={{
+                  fontSize: 9,
+                  fontWeight: 600,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  color: labelColor,
+                }}
+              >
+                {label}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: valueColor }}>{value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Transcript */}
+        <div
+          ref={transcriptRef}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            padding: '16px 18px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            background: 'var(--panel-bg)',
+          }}
+        >
+          {messages
+            .filter((m) => m.type === 'userTranscript' || m.type === 'agentTranscript')
+            .map((m) => {
+              const isUser = m.type === 'userTranscript';
+              const text = 'message' in m ? m.message : '';
+              return (
+                <div
+                  key={m.id}
+                  style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}
+                >
+                  <div
+                    style={{
+                      maxWidth: '78%',
+                      padding: '10px 13px',
+                      fontSize: 13.5,
+                      lineHeight: 1.45,
+                      background: isUser ? 'var(--accent)' : 'var(--surface)',
+                      color: isUser ? 'var(--accent-ink)' : 'var(--text)',
+                      borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                    }}
+                  >
+                    {text}
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+
+        {/* Noise meter (hardcoded) + mic control (real) */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            padding: '14px 18px',
+            background: 'var(--panel-bg-2)',
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                Noise level
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>
+                {NOISE_LEVEL_PCT}% · Quiet
+              </div>
+            </div>
+            <div
+              style={{
+                position: 'relative',
+                height: 8,
+                margin: '6px 0 2px',
+                borderRadius: 999,
+                background: 'var(--surface-2)',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  borderRadius: 999,
+                  width: `${NOISE_LEVEL_PCT}%`,
+                  background: 'var(--accent)',
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: `${NOISE_THRESHOLD_PCT}%`,
+                  width: 14,
+                  height: 14,
+                  borderRadius: '50%',
+                  background: 'var(--text)',
+                  border: '2px solid var(--panel-bg-2)',
+                  transform: 'translate(-50%, -50%)',
+                }}
+              />
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+              Alert threshold {NOISE_THRESHOLD_PCT}% — hardcoded for now
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
+            <div style={{ position: 'relative', width: 48, height: 48 }}>
+              {isMicrophoneEnabled &&
+                micVolumes.map((v, i) => {
+                  const angle = (i / micVolumes.length) * Math.PI * 2;
+                  const radius = 30;
+                  const size = 6 + Math.min(1, v * 3) * 8;
+                  const x = Math.cos(angle) * radius;
+                  const y = Math.sin(angle) * radius;
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        position: 'absolute',
+                        top: `calc(50% + ${y}px - ${size / 2}px)`,
+                        left: `calc(50% + ${x}px - ${size / 2}px)`,
+                        width: size,
+                        height: size,
+                        borderRadius: '50%',
+                        background: 'var(--accent)',
+                        opacity: 0.25 + Math.min(0.6, v * 4),
+                        transition: 'width 80ms linear, height 80ms linear, opacity 80ms linear',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  );
+                })}
+            <button
+              onClick={() => localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled)}
+              style={{
+                position: 'relative',
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                border: 'none',
+                background: isMicrophoneEnabled ? 'var(--accent)' : 'var(--surface-2)',
+                boxShadow: isMicrophoneEnabled
+                  ? '0 0 0 6px oklch(0.74 0.15 55 / 0.16)'
+                  : 'none',
+                outline: isMicrophoneEnabled ? 'none' : '1.5px solid var(--warn)',
+              }}
+              aria-label={isMicrophoneEnabled ? 'Mute microphone' : 'Unmute microphone'}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <rect
+                  x="9"
+                  y="2"
+                  width="6"
+                  height="12"
+                  rx="3"
+                  stroke={isMicrophoneEnabled ? 'var(--accent-ink)' : 'var(--warn)'}
+                  strokeWidth="1.8"
+                />
+                <path
+                  d="M5 11a7 7 0 0 0 14 0"
+                  stroke={isMicrophoneEnabled ? 'var(--accent-ink)' : 'var(--warn)'}
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M12 18v3"
+                  stroke={isMicrophoneEnabled ? 'var(--accent-ink)' : 'var(--warn)'}
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M9 21h6"
+                  stroke={isMicrophoneEnabled ? 'var(--accent-ink)' : 'var(--warn)'}
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+                {!isMicrophoneEnabled && (
+                  <path d="M4 4l16 16" stroke="var(--warn)" strokeWidth="2.2" strokeLinecap="round" />
+                )}
+              </svg>
+            </button>
+            </div>
+            <div style={{ fontSize: 9, fontWeight: 500, color: 'var(--text-muted)' }}>
+              {isMicrophoneEnabled ? 'Tap to mute' : 'Tap to unmute'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Launcher({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      onClick={onOpen}
+      aria-label="Open Meridian Academy voice assistant"
+      style={{
+        position: 'fixed',
+        bottom: 24,
+        right: 24,
+        width: 64,
+        height: 64,
+        border: 'none',
+        cursor: 'pointer',
+        background: 'transparent',
+      }}
+    >
+      <div
+        className="glow-pulse"
+        style={{ position: 'relative', width: 64, height: 64, borderRadius: '50%', color: 'var(--accent)' }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            inset: -14,
+            borderRadius: '50%',
+            background: 'oklch(0.74 0.15 55 / 0.14)',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            inset: -6,
+            borderRadius: '50%',
+            background: 'oklch(0.74 0.15 55 / 0.20)',
+          }}
+        />
+        <div
+          style={{
+            position: 'relative',
+            width: 64,
+            height: 64,
+            borderRadius: '50%',
+            background: 'var(--panel-bg)',
+            boxShadow: '0 12px 28px oklch(0 0 0 / 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M12 3l2 7 7 2-7 2-2 7-2-7-7-2 7-2z"
+              fill="var(--accent)"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+      </div>
+    </button>
+  );
+}
