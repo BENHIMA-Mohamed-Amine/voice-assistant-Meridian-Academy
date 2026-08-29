@@ -20,7 +20,6 @@ interface LatencyPayload {
   e2eAvgMs?: number;
 }
 import * as silero from '@livekit/agents-plugin-silero';
-import * as soniox from '@livekit/agents-plugin-soniox';
 // import { NoiseCancellation } from '@livekit/noise-cancellation-node'; // see inputOptions below
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
@@ -30,13 +29,6 @@ import { createAgent } from './agent.ts';
 // Make sure to set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET
 // when running locally or self-hosting your agent server.
 dotenv.config({ path: '.env.local' });
-
-// Read once, after dotenv.config() above, so it's available before entry() needs it.
-// See the note on the STT/TTS construction below for why this can't come from the plugin's own default.
-const SONIOX_API_KEY = process.env.SONIOX_API_KEY;
-if (!SONIOX_API_KEY) {
-  throw new Error('SONIOX_API_KEY is not set. Add it to .env.local.');
-}
 
 // Loaded once per worker process (not per call) and reused across jobs via prewarm below.
 interface ProcessUserData {
@@ -51,32 +43,34 @@ export default defineAgent<ProcessUserData>({
     // so `silero.VAD` is structurally identical to but a distinct type from this file's `VAD`
     // import. The cast is safe: same compiled class, same version, just a duplicate module
     // instance — a known pnpm + TypeScript private-field quirk, not a real type mismatch.
-    proc.userData.vad = (await silero.VAD.load()) as unknown as VAD;
+    // minSilenceDuration defaults to 550ms — this is a hard floor on end-of-turn latency
+    // that sits *before* the turn detector model even runs (VAD must first confirm silence).
+    // 250ms is the documented minimum the audio turn detector accepts; lower raises a
+    // ValueError at session start. See docs.livekit.io/agents/logic/turns/turn-detector.
+    proc.userData.vad = (await silero.VAD.load({ minSilenceDuration: 250 })) as unknown as VAD;
   },
 
   entry: async (ctx: JobContext<ProcessUserData>) => {
-    // Set up a voice AI pipeline using Soniox (STT + TTS), Silero VAD, and the LiveKit turn detector
+    // Set up a voice AI pipeline using LiveKit Inference (Deepgram STT + Cartesia TTS),
+    // Silero VAD, and the LiveKit turn detector. Both run on LiveKit's own inference infra
+    // (no separate provider API key/billing) and were chosen over Soniox for lower latency —
+    // see architecture-decisions.md.
     const session = new voice.AgentSession({
-      // Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
-      // apiKey is passed explicitly (rather than relying on the plugin's own env lookup) because
-      // the plugin reads process.env.SONIOX_API_KEY once at import time, which is before this
-      // file's dotenv.config() call runs — ES module imports always evaluate before the importing
-      // module's own top-level code, so the plugin's default would otherwise capture `undefined`.
-      stt: new soniox.STT({
-        model: 'stt-rt-v5',
-        languageHints: ['en', 'fr'],
-        apiKey: SONIOX_API_KEY,
+      // Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand.
+      // Nova-3 supports English and French (among 40+ languages); `multi` auto-detects per segment
+      // so the agent doesn't need to know in advance which language the visitor will use.
+      stt: new inference.STT({
+        model: 'deepgram/nova-3',
+        language: 'multi',
       }),
 
-      // Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
-      // No `language` here — the agent switches between English and French per the prompt's
-      // Language rule, so hardcoding one would fight that. return_timestamps isn't in this
-      // Node.js plugin's typed options (Python-only or a raw API field not yet exposed here).
-      tts: new soniox.TTS({
-        model: 'tts-rt-v2',
-        voice: 'Daniel',
-        speed: 1,
-        apiKey: SONIOX_API_KEY,
+      // Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear.
+      // No `language` here — Cartesia's sonic-3 voices are cross-lingual (the same voice ID
+      // renders any of its 40+ supported languages), and the agent switches between English
+      // and French per the prompt's Language rule, so hardcoding one would fight that.
+      tts: new inference.TTS({
+        model: 'cartesia/sonic-3',
+        voice: 'a167e0f3-df7e-4d52-a9c3-f949145efdab', // "Blake" — suggested voice, see docs.livekit.io/agents/models/tts/cartesia
       }),
 
       // Voice activity detection (VAD) — distinguishes speech from silence/noise.
