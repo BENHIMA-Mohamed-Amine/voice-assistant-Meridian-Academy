@@ -5,6 +5,7 @@ import { useAgent, useLocalParticipant, useMultibandTrackVolume, useSessionMessa
 import { type LocalAudioTrack } from 'livekit-client';
 import { useLatencyMetrics } from '../hooks/useLatencyMetrics';
 import { useNoiseMeter } from '../hooks/useNoiseMeter';
+import { messageKey, useTranscriptConfidence } from '../hooks/useTranscriptConfidence';
 
 const formatMs = (ms: number | undefined) => (ms === undefined ? '—' : `${ms}ms`);
 
@@ -49,6 +50,7 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
     isDraggingThreshold,
     handleThresholdPointerDown,
   } = useNoiseMeter(micLevel);
+  const confidenceByKey = useTranscriptConfidence(messages);
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight });
@@ -266,6 +268,7 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
             .map((m) => {
               const isUser = m.type === 'userTranscript';
               const text = 'message' in m ? m.message : '';
+              const confidence = isUser ? confidenceByKey[messageKey(m)] : undefined;
               return (
                 <div
                   key={m.id}
@@ -283,6 +286,59 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
                     }}
                   >
                     {text}
+                    {confidence !== undefined && (
+                      <div
+                        style={{
+                          marginTop: 7,
+                          paddingTop: 6,
+                          borderTop: '1px solid color-mix(in oklch, var(--accent-ink) 22%, transparent)',
+                          display: 'flex',
+                          justifyContent: 'flex-end',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '2.5px 8px',
+                            borderRadius: 999,
+                            background: 'color-mix(in oklch, var(--accent-ink) 14%, transparent)',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 5,
+                              height: 5,
+                              borderRadius: '50%',
+                              flexShrink: 0,
+                              background: confidence < 0.6 ? 'var(--warn)' : 'var(--accent-ink)',
+                              opacity: confidence < 0.6 ? 1 : 0.55,
+                            }}
+                          />
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              letterSpacing: '0.03em',
+                              color: 'var(--accent-ink)',
+                              opacity: 0.75,
+                            }}
+                          >
+                            Transcript confidence{' '}
+                            <span
+                              style={{
+                                fontWeight: 800,
+                                color: confidence < 0.6 ? 'var(--warn)' : 'var(--accent-ink)',
+                                opacity: 1,
+                              }}
+                            >
+                              {Math.round(confidence * 100)}%
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

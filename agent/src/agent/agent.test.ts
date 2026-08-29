@@ -16,7 +16,7 @@ describe('agent evaluation', () => {
   beforeEach(async () => {
     judgeLlm = new inference.LLM({ model: 'openai/gpt-4.1-mini' });
     session = new voice.AgentSession();
-    await session.start({ agent: createAgent(() => false) });
+    await session.start({ agent: createAgent(() => false, () => {}) });
   });
 
   afterEach(async () => {

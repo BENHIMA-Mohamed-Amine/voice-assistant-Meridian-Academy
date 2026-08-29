@@ -13,6 +13,7 @@ import * as soniox from '@livekit/agents-plugin-soniox';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { createAgent } from './agent/agent.ts';
+import { publishConfidence } from './livekit/confidenceSignal.ts';
 import { publishLatencyMetrics } from './livekit/latencyMetrics.ts';
 import { watchNoiseSignal } from './livekit/noiseSignal.ts';
 
@@ -83,7 +84,7 @@ export default defineAgent<ProcessUserData>({
     });
 
     await session.start({
-      agent: createAgent(isEnvironmentNoisy),
+      agent: createAgent(isEnvironmentNoisy, (confidence) => publishConfidence(ctx.room, confidence)),
       room: ctx.room,
     });
 
