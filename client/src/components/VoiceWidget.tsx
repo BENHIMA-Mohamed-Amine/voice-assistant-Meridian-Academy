@@ -6,6 +6,7 @@ import {
   SessionProvider,
   useAgent,
   useDataChannel,
+  useIsSpeaking,
   useLocalParticipant,
   useMultibandTrackVolume,
   useSession,
@@ -15,9 +16,13 @@ import { TokenSource, type LocalAudioTrack } from 'livekit-client';
 
 const TOKEN_SOURCE = TokenSource.endpoint('/api/token');
 
-// Hardcoded for now — noise level/threshold have no real Web Audio wiring yet.
-const NOISE_LEVEL_PCT = 32;
-const NOISE_THRESHOLD_PCT = 50;
+// Same sqrt-compression + scale used for the mic pulse ring, so the noise meter's
+// percentage tracks what that glow visually shows — one source of truth for "how loud".
+const NOISE_LEVEL_SCALE = 1.8;
+// "sustained for a debounce window" per architecture-decisions.md, to avoid a brief
+// spike (a door slam) firing the over-threshold flag.
+const NOISE_DEBOUNCE_MS = 700;
+const DEFAULT_NOISE_THRESHOLD_PCT = 50;
 
 // Mirrors LatencyPayload in agent/src/main.ts, published on the 'lk.metrics' data channel topic.
 interface LatencyMetrics {
@@ -102,6 +107,62 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
       console.error('Failed to parse latency metrics payload:', err);
     }
   });
+
+  // Client-side noise meter — a supporting UI signal, not the "please repeat" trigger
+  // itself (that stays gated server-side on STT confidence, per architecture-decisions.md).
+  // Raw mic RMS can't tell the user's own voice apart from background noise, so we freeze
+  // the reading while LiveKit's speech-activity detector says the user is talking — the
+  // meter holds its last true ambient value instead of spiking on your own voice.
+  const rawNoiseLevelPct = Math.round(Math.min(1, micLevel * NOISE_LEVEL_SCALE) * 100);
+  const isSpeaking = useIsSpeaking(localParticipant);
+  // Holds the last reading taken while not speaking. Updated directly during render
+  // (React's documented pattern for state derived from another value) rather than in an
+  // effect, since this needs to track every render while !isSpeaking, not just on change.
+  const [noiseLevelPct, setNoiseLevelPct] = useState(0);
+  if (!isSpeaking && noiseLevelPct !== rawNoiseLevelPct) {
+    setNoiseLevelPct(rawNoiseLevelPct);
+  }
+  const [noiseThresholdPct, setNoiseThresholdPct] = useState(DEFAULT_NOISE_THRESHOLD_PCT);
+  const isOverThreshold = noiseLevelPct > noiseThresholdPct;
+  const noiseBarRef = useRef<HTMLDivElement>(null);
+  const lastSentOverThresholdRef = useRef(false);
+  const { send: sendNoiseFlag } = useDataChannel('lk.noise');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (isOverThreshold === lastSentOverThresholdRef.current) return;
+      lastSentOverThresholdRef.current = isOverThreshold;
+      void sendNoiseFlag(new TextEncoder().encode(JSON.stringify({ overThreshold: isOverThreshold })), {
+        reliable: false,
+      });
+    }, NOISE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [isOverThreshold, sendNoiseFlag]);
+
+  const [isDraggingThreshold, setIsDraggingThreshold] = useState(false);
+
+  const handleThresholdPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const bar = noiseBarRef.current;
+    if (!bar) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsDraggingThreshold(true);
+
+    const updateFromClientX = (clientX: number) => {
+      const rect = bar.getBoundingClientRect();
+      const pct = Math.round(Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) * 100);
+      setNoiseThresholdPct(pct);
+    };
+    updateFromClientX(e.clientX);
+
+    const handleMove = (moveEvent: PointerEvent) => updateFromClientX(moveEvent.clientX);
+    const handleUp = () => {
+      setIsDraggingThreshold(false);
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+  };
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight });
@@ -340,7 +401,7 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
             })}
         </div>
 
-        {/* Noise meter (hardcoded) + mic control (real) */}
+        {/* Noise meter (real) + mic control (real) */}
         <div
           style={{
             display: 'flex',
@@ -365,11 +426,18 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
               >
                 Noise level
               </div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>
-                {NOISE_LEVEL_PCT}% · Quiet
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: isOverThreshold ? 'var(--warn)' : 'var(--accent)',
+                }}
+              >
+                {noiseLevelPct}% · {isOverThreshold ? 'Too noisy' : 'Quiet'}
               </div>
             </div>
             <div
+              ref={noiseBarRef}
               style={{
                 position: 'relative',
                 height: 8,
@@ -385,26 +453,52 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
                   top: 0,
                   bottom: 0,
                   borderRadius: 999,
-                  width: `${NOISE_LEVEL_PCT}%`,
-                  background: 'var(--accent)',
+                  width: `${noiseLevelPct}%`,
+                  background: isOverThreshold ? 'var(--warn)' : 'var(--accent)',
+                  transition: 'width 90ms linear',
                 }}
               />
+              {isDraggingThreshold && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${noiseThresholdPct}%`,
+                    bottom: '100%',
+                    marginBottom: 8,
+                    transform: 'translateX(-50%)',
+                    padding: '2px 7px',
+                    borderRadius: 6,
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    color: 'var(--text)',
+                    whiteSpace: 'nowrap',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {noiseThresholdPct}%
+                </div>
+              )}
               <div
+                onPointerDown={handleThresholdPointerDown}
                 style={{
                   position: 'absolute',
                   top: '50%',
-                  left: `${NOISE_THRESHOLD_PCT}%`,
+                  left: `${noiseThresholdPct}%`,
                   width: 14,
                   height: 14,
                   borderRadius: '50%',
                   background: 'var(--text)',
                   border: '2px solid var(--panel-bg-2)',
                   transform: 'translate(-50%, -50%)',
+                  cursor: 'grab',
+                  touchAction: 'none',
                 }}
               />
             </div>
             <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-              Alert threshold {NOISE_THRESHOLD_PCT}% — hardcoded for now
+              Alert threshold <strong style={{ color: 'var(--text)', fontWeight: 700 }}>{noiseThresholdPct}%</strong> — drag the knob to adjust
             </div>
           </div>
 
