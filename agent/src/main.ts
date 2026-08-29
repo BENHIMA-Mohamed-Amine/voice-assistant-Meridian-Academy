@@ -43,24 +43,31 @@ export default defineAgent<ProcessUserData>({
     // so `silero.VAD` is structurally identical to but a distinct type from this file's `VAD`
     // import. The cast is safe: same compiled class, same version, just a duplicate module
     // instance — a known pnpm + TypeScript private-field quirk, not a real type mismatch.
-    // minSilenceDuration defaults to 550ms — this is a hard floor on end-of-turn latency
-    // that sits *before* the turn detector model even runs (VAD must first confirm silence).
-    // 350ms; the documented minimum the audio turn detector accepts is 250ms (lower raises
-    // a ValueError at session start). See docs.livekit.io/agents/logic/turns/turn-detector.
+    // minSilenceDuration defaults to 550ms; VAD here only drives interruption detection
+    // (turnHandling.interruption below), since end-of-turn itself comes from Deepgram
+    // Flux's own endpointing (turnDetection: 'stt'), not the VAD/audio-turn-detector path.
     proc.userData.vad = (await silero.VAD.load({ minSilenceDuration: 350 })) as unknown as VAD;
   },
 
   entry: async (ctx: JobContext<ProcessUserData>) => {
-    // Set up a voice AI pipeline using LiveKit Inference (Deepgram STT + Cartesia TTS),
-    // Silero VAD, and the LiveKit turn detector. Both run on LiveKit's own inference infra
-    // (no separate provider API key/billing) and were chosen over Soniox for lower latency —
-    // see architecture-decisions.md.
+    // Set up a voice AI pipeline using LiveKit Inference (Deepgram Flux STT + Cartesia TTS)
+    // and Silero VAD. Both run on LiveKit's own inference infra (no separate provider API
+    // key/billing) and were chosen over Soniox for lower latency — see architecture-decisions.md.
     const session = new voice.AgentSession({
       // Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand.
-      // Nova-3 supports English and French (among 40+ languages); `multi` auto-detects per segment
-      // so the agent doesn't need to know in advance which language the visitor will use.
+      // `multi` auto-detects per segment (Flux's multilingual set covers English + French,
+      // among others) so the agent doesn't need to know in advance which language the visitor will use.
+      //
+      // Whatever STT you use with the default audio TurnDetector, you're paying
+      // (VAD silence) + (STT final-transcript latency) + (turn-detector inference) before
+      // the LLM even starts — the framework gates the turn detector on a FINAL_TRANSCRIPT
+      // existing at all (see @livekit/agents src/voice/audio_recognition.ts), so a slow STT
+      // stalls end-of-turn detection regardless of provider. That was the real source of
+      // multi-second turn latency with nova-3, and Soniox hit the same wall for the same
+      // reason. Flux collapses this: its own phrase-endpointing model (acoustic + semantic)
+      // *is* the end-of-turn signal, so turnDetection: 'stt' below skips the wait entirely.
       stt: new inference.STT({
-        model: 'deepgram/nova-3',
+        model: 'deepgram/flux-general-multi',
         language: 'multi',
       }),
 
@@ -78,12 +85,17 @@ export default defineAgent<ProcessUserData>({
       vad: ctx.proc.userData.vad,
 
       turnHandling: {
-        // Turn detection determines when the user is speaking and when the agent should respond.
-        // The LiveKit audio turn detector is a multimodal model that encodes the user's audio
-        // directly to predict end of turn. It's built into the SDK (no extra plugin) and
-        // AgentSession supplies the required VAD automatically.
-        // See more at https://docs.livekit.io/agents/logic/turns/turn-detector/
-        turnDetection: new inference.TurnDetector(),
+        // Deepgram Flux has its own built-in phrase-endpointing model (acoustic + semantic),
+        // so we use its end-of-turn signal directly instead of the generic audio TurnDetector.
+        // VAD (below) still handles interruption detection.
+        // See https://docs.livekit.io/agents/models/stt/deepgram/#turn-detection
+        turnDetection: 'stt',
+        endpointing: {
+          // Flux already runs its own endpointing; the SDK's min_delay is additive on top
+          // of that, so keep it at 0 to avoid double-waiting.
+          minDelay: 0,
+          maxDelay: 3000,
+        },
         // VAD-based interruption (standard mode) — simpler and cheaper than adaptive
         // (context-aware barge-in) mode. Revisit adaptive mode later, closer to production.
         interruption: { mode: 'vad' },
