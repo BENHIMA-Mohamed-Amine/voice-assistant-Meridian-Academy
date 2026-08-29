@@ -8,6 +8,17 @@ import {
   inference,
   voice,
 } from '@livekit/agents';
+
+// Mirrors the shape the client widget expects on the 'lk.metrics' data channel topic.
+// Fields are filled in incrementally as each turn's metrics become available and
+// published on every update, so the client always has the latest known value per field.
+interface LatencyPayload {
+  eouMs?: number;
+  llmTtftMs?: number;
+  ttsTtfbMs?: number;
+  e2eMs?: number;
+  e2eAvgMs?: number;
+}
 import * as silero from '@livekit/agents-plugin-silero';
 import * as soniox from '@livekit/agents-plugin-soniox';
 // import { NoiseCancellation } from '@livekit/noise-cancellation-node'; // see inputOptions below
@@ -118,6 +129,51 @@ export default defineAgent<ProcessUserData>({
     // });
     // // Start the avatar and wait for it to join
     // await avatar.start(session, ctx.room);
+
+    // Per-turn latency, streamed to the client over the data channel so the widget's
+    // latency panel can show real numbers instead of the old hardcoded placeholders.
+    // ChatMessage.metrics is the non-deprecated per-turn surface (the session-level
+    // metrics_collected event is deprecated) — see architecture-decisions.md.
+    const latency: LatencyPayload = {};
+    let e2eSumMs = 0;
+    let e2eCount = 0;
+    const metricsEncoder = new TextEncoder();
+
+    const publishLatency = () => {
+      void ctx.room.localParticipant
+        ?.publishData(metricsEncoder.encode(JSON.stringify(latency)), {
+          reliable: true,
+          topic: 'lk.metrics',
+        })
+        .catch((err: unknown) => {
+          console.error('Failed to publish latency metrics:', err);
+        });
+    };
+
+    session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (ev) => {
+      if (ev.item.type !== 'message') return;
+      const m = ev.item.metrics;
+      if (!m) return;
+
+      if (ev.item.role === 'user') {
+        if (m.endOfTurnDelay === undefined) return;
+        latency.eouMs = Math.round(m.endOfTurnDelay * 1000);
+        publishLatency();
+        return;
+      }
+
+      if (ev.item.role === 'assistant') {
+        if (m.llmNodeTtft !== undefined) latency.llmTtftMs = Math.round(m.llmNodeTtft * 1000);
+        if (m.ttsNodeTtfb !== undefined) latency.ttsTtfbMs = Math.round(m.ttsNodeTtfb * 1000);
+        if (m.e2eLatency !== undefined) {
+          latency.e2eMs = Math.round(m.e2eLatency * 1000);
+          e2eSumMs += latency.e2eMs;
+          e2eCount += 1;
+          latency.e2eAvgMs = Math.round(e2eSumMs / e2eCount);
+        }
+        publishLatency();
+      }
+    });
 
     // Join the room and connect to the user
     await ctx.connect();

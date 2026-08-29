@@ -5,6 +5,7 @@ import {
   RoomAudioRenderer,
   SessionProvider,
   useAgent,
+  useDataChannel,
   useLocalParticipant,
   useMultibandTrackVolume,
   useSession,
@@ -14,11 +15,21 @@ import { TokenSource, type LocalAudioTrack } from 'livekit-client';
 
 const TOKEN_SOURCE = TokenSource.endpoint('/api/token');
 
-// Hardcoded for now — noise level/threshold have no real Web Audio wiring yet, and the
-// latency breakdown isn't forwarded from the agent over the data channel yet.
+// Hardcoded for now — noise level/threshold have no real Web Audio wiring yet.
 const NOISE_LEVEL_PCT = 32;
 const NOISE_THRESHOLD_PCT = 50;
-const LATENCY = { eou: 320, llmTtft: 410, ttsTtfb: 180, e2e: 910 };
+
+// Mirrors LatencyPayload in agent/src/main.ts, published on the 'lk.metrics' data channel topic.
+interface LatencyMetrics {
+  eouMs?: number;
+  llmTtftMs?: number;
+  ttsTtfbMs?: number;
+  e2eMs?: number;
+  e2eAvgMs?: number;
+}
+
+const metricsDecoder = new TextDecoder();
+const formatMs = (ms: number | undefined) => (ms === undefined ? '—' : `${ms}ms`);
 
 const STATE_LABELS: Record<string, string> = {
   disconnected: 'Not connected',
@@ -83,6 +94,14 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
   const micLevel = Math.sqrt(micLevelRaw);
   const [isCloseHovered, setIsCloseHovered] = useState(false);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const [latency, setLatency] = useState<LatencyMetrics>({});
+  useDataChannel('lk.metrics', (msg) => {
+    try {
+      setLatency(JSON.parse(metricsDecoder.decode(msg.payload)) as LatencyMetrics);
+    } catch (err) {
+      console.error('Failed to parse latency metrics payload:', err);
+    }
+  });
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight });
@@ -238,7 +257,7 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
           <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{stateLabel}</div>
           <div style={{ flexGrow: 1 }} />
           <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text)' }}>
-            {LATENCY.e2e}ms e2e
+            {formatMs(latency.e2eAvgMs)} AVG E2E
           </div>
         </div>
 
@@ -253,10 +272,13 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
           }}
         >
           {[
-            ['EOU', `${LATENCY.eou}ms`, 'var(--text-muted)', 'var(--text)'],
-            ['LLM TTFT', `${LATENCY.llmTtft}ms`, 'var(--text-muted)', 'var(--text)'],
-            ['TTS TTFB', `${LATENCY.ttsTtfb}ms`, 'var(--text-muted)', 'var(--text)'],
-            ['E2E', `${LATENCY.e2e}ms`, 'var(--accent)', 'var(--accent)'],
+            // EOU/LLM TTFT/TTS TTFB are per-turn (replaced each turn); E2E is a running
+            // average across the call, per design.md — a more stable "how's this call
+            // going" number rather than one noisy per-turn value.
+            ['EOU', formatMs(latency.eouMs), 'var(--text-muted)', 'var(--text)'],
+            ['LLM TTFT', formatMs(latency.llmTtftMs), 'var(--text-muted)', 'var(--text)'],
+            ['TTS TTFB', formatMs(latency.ttsTtfbMs), 'var(--text-muted)', 'var(--text)'],
+            ['AVG E2E', formatMs(latency.e2eAvgMs), 'var(--accent)', 'var(--accent)'],
           ].map(([label, value, labelColor, valueColor]) => (
             <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               <div
