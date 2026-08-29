@@ -35,6 +35,11 @@ the app as a whole.
 - **Live per-turn latency breakdown** — end-of-turn delay, LLM time-to-first-token, TTS
   time-to-first-byte, and total end-to-end latency, shown in the widget as the conversation
   happens.
+- **Fast-starting greeting** — the opening line is pre-synthesized once per worker process
+  (not per call), so it plays with no TTS wait at all. One warm process is also kept ready
+  (`numIdleProcesses: 1`) so a session doesn't pay for process/model startup on top of that.
+  See `agent/README.md`'s Known limitations for the cold starts this doesn't cover (LiveKit
+  Cloud free-tier scale-to-zero).
 - **Responsive layout** — works down to a single mobile viewport width, not just desktop.
 - **Demo booking flow** — collects company name, a work email (personal email providers are
   rejected), and a program of interest, then notifies the support team on Slack.

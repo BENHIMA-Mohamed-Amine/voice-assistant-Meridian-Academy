@@ -5,11 +5,13 @@ import {
   type VAD,
   cli,
   defineAgent,
+  toStream,
   voice,
 } from '@livekit/agents';
 import * as deepgram from '@livekit/agents-plugin-deepgram';
 import * as silero from '@livekit/agents-plugin-silero';
 import * as soniox from '@livekit/agents-plugin-soniox';
+import type { AudioFrame } from '@livekit/rtc-node';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_TRANSCRIPT_CONFIDENCE_THRESHOLD } from './agent/audioQuality.ts';
@@ -32,9 +34,17 @@ if (!SONIOX_API_KEY) {
   throw new Error('SONIOX_API_KEY is not set. Add it to .env.local.');
 }
 
+// Fixed text, spoken once at the very start of every session before the visitor has said
+// anything — synthesized once in prewarm (below) instead of at session start, so it plays
+// with no Soniox TTFB at all rather than shaving it down.
+const GREETING_TEXT =
+  "Hi there, welcome to Meridian Academy! I'm here to help you book a demo with our team. " +
+  "Whenever you're ready, just say the word and we'll get started.";
+
 // Loaded once per worker process (not per call) and reused across jobs via prewarm below.
 interface ProcessUserData {
   vad: VAD;
+  greetingAudio: AudioFrame[];
 }
 
 export default defineAgent<ProcessUserData>({
@@ -44,6 +54,15 @@ export default defineAgent<ProcessUserData>({
     // this file's `VAD` import. minSilenceDuration is lowered from the 550ms default; VAD
     // here only feeds interruption detection, since end-of-turn comes from the STT below.
     proc.userData.vad = (await silero.VAD.load({ minSilenceDuration: 350 })) as unknown as VAD;
+
+    // Throwaway TTS client used only to pre-render the greeting once per process.
+    const greetingTts = new soniox.TTS({ apiKey: SONIOX_API_KEY });
+    const frames: AudioFrame[] = [];
+    for await (const audio of greetingTts.synthesize(GREETING_TEXT)) {
+      frames.push(audio.frame);
+    }
+    proc.userData.greetingAudio = frames;
+    await greetingTts.close();
   },
 
   entry: async (ctx: JobContext<ProcessUserData>) => {
@@ -118,11 +137,18 @@ export default defineAgent<ProcessUserData>({
 
     await ctx.connect();
 
-    // Static greeting (TTS only, no LLM call) — faster and doesn't depend on the LLM
-    // producing a good opener on cold start every time.
-    session.say(
-      "Hi there, welcome to Meridian Academy! I'm here to help you book a demo with our team. Whenever you're ready, just say the word and we'll get started.",
-    );
+    // Static greeting (no LLM call, no TTS call — pre-rendered in prewarm above) — faster and
+    // doesn't depend on the LLM producing a good opener, or Soniox's TTFB, on every session.
+    const greetingFrames = ctx.proc.userData.greetingAudio;
+    session.say(GREETING_TEXT, {
+      audio: toStream(
+        (async function* () {
+          for (const frame of greetingFrames) {
+            yield frame;
+          }
+        })(),
+      ),
+    });
   },
 });
 
@@ -130,5 +156,11 @@ cli.runApp(
   new ServerOptions({
     agent: fileURLToPath(import.meta.url),
     agentName: 'agent',
+    // `lk agent dev` defaults this to 0, so prewarm (VAD load + greeting synthesis) runs
+    // synchronously in every job's critical path during local testing instead of ahead of
+    // time. Pinning it to 1 fixes that, and is deliberately low rather than the CPU-aware
+    // production default (min(availableParallelism, 4)): expected concurrency here is one
+    // visitor at a time, so more idle processes would only cost memory for no benefit.
+    numIdleProcesses: 1,
   }),
 );

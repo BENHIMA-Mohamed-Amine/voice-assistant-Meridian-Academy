@@ -53,6 +53,10 @@ agent/
   not a task that benefits from a reasoning pass.
 - **TTS — Soniox**. Cartesia synthesizes faster, but Soniox was chosen here: cheaper, and one
   model natively covers both English and French without swapping voices per language.
+  - The opening greeting is fixed text spoken before the visitor has said anything, so it's
+    pre-rendered once per worker process in `prewarm` (`src/main.ts`) and replayed from cached
+    audio frames at session start instead of calling Soniox live — cuts Soniox's TTS TTFB
+    (~400-600ms) off the very first thing the visitor hears.
 - **VAD — Silero**, used only for interruption detection (end-of-turn comes from Deepgram Flux
   above).
 - **Observability — Langfuse (optional)**. See [Observability](#observability) below.
@@ -129,13 +133,18 @@ committed to the repo.
   agent process on activation in testing and was disabled. Noise reduction currently relies on
   the browser's default WebRTC audio processing (echo cancellation, noise suppression, auto
   gain control) rather than an explicit RNNoise-style pipeline.
-- **Cold start on first connection.** On LiveKit Cloud's free (Build) plan, the production
-  agent scales down to zero replicas once all sessions end; the next visitor's connection
-  triggers a cold start that adds ~10-20s before the agent joins the room. This is a platform
-  tier limit, not something `prewarm`/`num_idle_processes` can fix — those only pre-load
-  processes/models within an already-running instance, they don't keep the instance itself
-  alive between sessions. Staying warm continuously requires a paid LiveKit Cloud plan (Ship or
-  higher).
+- **Cold start on first connection (deployed).** On LiveKit Cloud's free (Build) plan, the
+  production agent scales down to zero replicas once all sessions end; the next visitor's
+  connection triggers a cold start that adds ~10-20s before the agent joins the room. This is a
+  platform tier limit, not something `prewarm`/`num_idle_processes` can fix — those only
+  pre-load processes/models within an already-running instance, they don't keep the instance
+  itself alive between sessions. Staying warm continuously requires a paid LiveKit Cloud plan
+  (Ship or higher).
+- **Separately, local `pnpm dev` testing has its own cold start** — `lk agent dev` defaults
+  `numIdleProcesses` to 0, so prewarm (VAD load, greeting pre-synthesis) runs in every job's
+  critical path instead of ahead of time. `src/main.ts` pins `numIdleProcesses: 1` (applies in
+  both dev and production) so only the very first job — locally, or after a deployed replica
+  wakes from the free-tier cold start above — pays this cost.
 
 ## Observability
 
