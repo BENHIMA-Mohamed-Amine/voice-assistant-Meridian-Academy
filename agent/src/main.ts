@@ -18,6 +18,7 @@ import { publishConfidence } from './livekit/confidenceSignal.ts';
 import { watchConfidenceThreshold } from './livekit/confidenceThresholdSignal.ts';
 import { publishLatencyMetrics } from './livekit/latencyMetrics.ts';
 import { watchNoiseSignal } from './livekit/noiseSignal.ts';
+import { setupLangfuseTracing } from './livekit/tracing.ts';
 
 // Make sure to set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET when running locally
 // or self-hosting your agent server.
@@ -46,6 +47,14 @@ export default defineAgent<ProcessUserData>({
   },
 
   entry: async (ctx: JobContext<ProcessUserData>) => {
+    // Routes this session's spans (LLM calls, tool calls, STT/TTS) to Langfuse, if configured.
+    const traceProvider = setupLangfuseTracing({ 'langfuse.session.id': ctx.room.name });
+    if (traceProvider) {
+      ctx.addShutdownCallback(async () => {
+        await traceProvider.shutdown();
+      });
+    }
+
     const isEnvironmentNoisy = watchNoiseSignal(ctx.room);
     const getConfidenceThreshold = watchConfidenceThreshold(
       ctx.room,

@@ -55,6 +55,7 @@ agent/
   model natively covers both English and French without swapping voices per language.
 - **VAD — Silero**, used only for interruption detection (end-of-turn comes from Deepgram Flux
   above).
+- **Observability — Langfuse (optional)**. See [Observability](#observability) below.
 
 ## Noise & confidence handling
 
@@ -96,6 +97,9 @@ against the client running locally (or the LiveKit Agents testing console).
 | `SONIOX_API_KEY`     | Yes      | TTS                                                                                                                   |
 | `DEEPGRAM_API_KEY`   | Yes      | STT (Flux)                                                                                                            |
 | `SLACK_WEBHOOK_URL`  | No       | Slack notification when a demo request completes. If unset, the tool still succeeds and just skips the Slack message. |
+| `LANGFUSE_PUBLIC_KEY` | No | Langfuse observability — traces LLM calls, tool calls, and STT/TTS spans per session. If unset (along with the two below), tracing is skipped entirely. |
+| `LANGFUSE_SECRET_KEY` | No | Langfuse secret key, paired with the public key above. |
+| `LANGFUSE_BASE_URL` | No | Langfuse instance URL, e.g. `https://cloud.langfuse.com` (EU) or `https://us.cloud.langfuse.com` (US). |
 
 ### Other commands
 
@@ -125,11 +129,24 @@ committed to the repo.
   agent process on activation in testing and was disabled. Noise reduction currently relies on
   the browser's default WebRTC audio processing (echo cancellation, noise suppression, auto
   gain control) rather than an explicit RNNoise-style pipeline.
+- **Cold start on first connection.** On LiveKit Cloud's free (Build) plan, the production
+  agent scales down to zero replicas once all sessions end; the next visitor's connection
+  triggers a cold start that adds ~10-20s before the agent joins the room. This is a platform
+  tier limit, not something `prewarm`/`num_idle_processes` can fix — those only pre-load
+  processes/models within an already-running instance, they don't keep the instance itself
+  alive between sessions. Staying warm continuously requires a paid LiveKit Cloud plan (Ship or
+  higher).
+
+## Observability
+
+Optional Langfuse export of the SDK's built-in per-session OpenTelemetry traces (LLM calls,
+tool calls, STT/TTS spans) — see `src/livekit/tracing.ts`. Skipped entirely if the
+`LANGFUSE_*` env vars aren't set. Registering Langfuse's span processor alongside LiveKit's own
+keeps [Agent insights in LiveKit Cloud](https://docs.livekit.io/deploy/observability/insights/)
+working too, not just Langfuse.
 
 ## Possible improvements
 
 - Server-side noise cancellation, once the crash is root-caused.
-- An LLM observability tool (e.g. LangSmith or Langfuse) to trace conversations, tool calls,
-  and latency across turns.
 - Scenario-based conversation tests (noisy environment, multilingual switching, personal-email
   rejection) beyond the current unit and behavioral evals.

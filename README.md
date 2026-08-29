@@ -68,6 +68,7 @@ the app as a whole.
 | LLM | Qwen3 (via Groq) | Fast, cheap, instruct mode for simple slot-filling dialogue |
 | TTS | Soniox | Cheaper than Cartesia, one model natively covers English + French |
 | VAD | Silero | Interruption detection |
+| Observability | Langfuse (optional) | Per-session LLM/tool/STT/TTS trace export, alongside LiveKit Cloud's own Agent insights |
 | Backend | Node.js / TypeScript | `agent/` |
 | Frontend | Next.js / React / TypeScript | `client/` |
 
