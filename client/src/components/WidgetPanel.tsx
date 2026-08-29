@@ -28,6 +28,11 @@ const STATE_DOT_COLORS: Record<string, string> = {
   listening: 'var(--state-listening)',
   thinking: 'var(--state-thinking)',
   speaking: 'var(--state-speaking)',
+  // Same row design as the active states above — no pulsing ring (that's reserved for an
+  // in-progress turn), just a color that reflects what's actually happening.
+  connecting: 'var(--accent)',
+  'pre-connect-buffering': 'var(--accent)',
+  failed: 'var(--warn)',
 };
 
 export function WidgetPanel({ onClose }: { onClose: () => void }) {

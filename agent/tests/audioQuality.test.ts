@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAudioQualityNote } from './audioQuality.ts';
+import { buildAudioQualityNote } from '../src/agent/audioQuality.ts';
 
 describe('buildAudioQualityNote', () => {
   it('adds no note when neither noisy nor low-confidence', () => {

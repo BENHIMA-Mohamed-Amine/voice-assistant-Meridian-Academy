@@ -14,11 +14,8 @@ agent/
 │   │   ├── agent.ts                   The assistant itself: persona/instructions, LLM
 │   │   │                               config, the audio-quality note injected per turn,
 │   │   │                               and tool wiring.
-│   │   ├── agent.test.ts              Behavioral evals for the agent (greeting, refusing
-│   │   │                               out-of-scope/harmful requests).
 │   │   ├── audioQuality.ts            Pure logic: builds the "audio quality note" text from
 │   │   │                               (isNoisy, isLowConfidence). Unit-tested in isolation.
-│   │   ├── audioQuality.test.ts       Tests for audioQuality.ts.
 │   │   ├── tools.ts                   The notifySupportTeam tool (posts a completed demo
 │   │   │                               request to Slack).
 │   │   └── email.ts                   Work-email vs. personal-email domain check used by
@@ -32,8 +29,15 @@ agent/
 │       ├── confidenceThresholdSignal.ts Listens for the client's confidence-threshold
 │       │                               override on 'lk.confidenceThreshold', overriding the
 │       │                               default in audioQuality.ts for that session.
-│       └── latencyMetrics.ts          Publishes per-turn latency (EOU, LLM TTFT, TTS TTFB,
-│                                       E2E) to the client on the 'lk.metrics' topic.
+│       ├── latencyMetrics.ts          Publishes per-turn latency (EOU, LLM TTFT, TTS TTFB,
+│       │                               E2E) to the client on the 'lk.metrics' topic.
+│       └── tracing.ts                 Optional Langfuse OpenTelemetry trace export. See
+│                                       Observability below.
+│
+├── tests/
+│   ├── agent.test.ts                  Behavioral evals for the agent (greeting, refusing
+│   │                                   out-of-scope/harmful requests).
+│   └── audioQuality.test.ts           Tests for audioQuality.ts.
 │
 ├── Dockerfile                         Production container build for LiveKit Cloud deploy.
 ├── livekit.toml                       LiveKit Cloud agent deployment config.
@@ -154,8 +158,28 @@ tool calls, STT/TTS spans) — see `src/livekit/tracing.ts`. Skipped entirely if
 keeps [Agent insights in LiveKit Cloud](https://docs.livekit.io/deploy/observability/insights/)
 working too, not just Langfuse.
 
+## Testing
+
+Two layers, per [LiveKit's testing guide](https://docs.livekit.io/agents/start/testing/):
+
+- **Turn-level (`tests/`, `pnpm test`)** — Vitest behavioral evals and unit tests, asserting on
+  individual turns via `session.run()`. Runs locally/CI, text-mode, deterministic.
+- **Scenario-level (`scenarios.yaml`)** — full end-to-end conversations against an LLM-driven
+  simulated visitor, judged as a whole rather than turn by turn. Covers a happy path (asks what
+  the assistant can help with, then books a demo end-to-end) and an unhappy path (a rejected
+  personal email, plus an off-topic/prompt-injection attempt, both recovered from before the
+  booking completes). Run with:
+  ```bash
+  lk agent simulate --scenarios scenarios.yaml
+  ```
+  Runs on LiveKit Cloud (beta feature), against your authenticated `lk` project. Run scenarios
+  one at a time (`--concurrency 1`) rather than back-to-back — Groq's free-tier rate limit for
+  `qwen/qwen3.8-27b` (8,000 tokens/minute) is easy to exhaust across multiple simulated
+  conversations in the same minute, which surfaces as a false "agent produced no response
+  items" failure rather than an actual agent defect.
+
 ## Possible improvements
 
 - Server-side noise cancellation, once the crash is root-caused.
-- Scenario-based conversation tests (noisy environment, multilingual switching, personal-email
-  rejection) beyond the current unit and behavioral evals.
+- More scenarios (noisy environment, multilingual switching) beyond the two in
+  `scenarios.yaml`.

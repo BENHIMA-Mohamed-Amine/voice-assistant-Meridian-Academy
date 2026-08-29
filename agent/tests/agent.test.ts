@@ -1,7 +1,7 @@
 import { dedent, inference, initializeLogger, voice } from '@livekit/agents';
 import dotenv from 'dotenv';
 import { afterEach, beforeEach, describe, it } from 'vitest';
-import { createAgent } from './agent.ts';
+import { createAgent } from '../src/agent/agent.ts';
 
 dotenv.config({ path: '.env.local' });
 

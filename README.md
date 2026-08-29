@@ -43,6 +43,10 @@ the app as a whole.
 - **Responsive layout** — works down to a single mobile viewport width, not just desktop.
 - **Demo booking flow** — collects company name, a work email (personal email providers are
   rejected), and a program of interest, then notifies the support team on Slack.
+- **Turn-level and scenario-level agent tests** — Vitest-based behavioral evals asserting on
+  individual turns, plus full end-to-end conversation scenarios (a happy-path booking and an
+  unhappy path covering a rejected personal email and an off-topic/prompt-injection attempt)
+  run via LiveKit Cloud's agent simulations. See `agent/README.md`.
 
 ## How a connection is made
 
