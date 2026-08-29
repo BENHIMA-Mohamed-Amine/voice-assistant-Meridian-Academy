@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAgent, useLocalParticipant, useMultibandTrackVolume, useSessionMessages } from '@livekit/components-react';
 import { type LocalAudioTrack } from 'livekit-client';
+import { useConfidenceThreshold } from '../hooks/useConfidenceThreshold';
 import { useLatencyMetrics } from '../hooks/useLatencyMetrics';
 import { useNoiseMeter } from '../hooks/useNoiseMeter';
 import { messageKey, useTranscriptConfidence } from '../hooks/useTranscriptConfidence';
@@ -51,6 +52,7 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
     handleThresholdPointerDown,
   } = useNoiseMeter(micLevel);
   const confidenceByKey = useTranscriptConfidence(messages);
+  const { confidenceThresholdPct, setConfidenceThresholdPct } = useConfidenceThreshold();
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight });
@@ -269,6 +271,7 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
               const isUser = m.type === 'userTranscript';
               const text = 'message' in m ? m.message : '';
               const confidence = isUser ? confidenceByKey[messageKey(m)] : undefined;
+              const isLowConfidence = confidence !== undefined && confidence < confidenceThresholdPct / 100;
               return (
                 <div
                   key={m.id}
@@ -312,8 +315,8 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
                               height: 5,
                               borderRadius: '50%',
                               flexShrink: 0,
-                              background: confidence < 0.6 ? 'var(--warn)' : 'var(--accent-ink)',
-                              opacity: confidence < 0.6 ? 1 : 0.55,
+                              background: isLowConfidence ? 'var(--warn)' : 'var(--accent-ink)',
+                              opacity: isLowConfidence ? 1 : 0.55,
                             }}
                           />
                           <span
@@ -329,7 +332,7 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
                             <span
                               style={{
                                 fontWeight: 800,
-                                color: confidence < 0.6 ? 'var(--warn)' : 'var(--accent-ink)',
+                                color: isLowConfidence ? 'var(--warn)' : 'var(--accent-ink)',
                                 opacity: 1,
                               }}
                             >
@@ -443,6 +446,29 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
             </div>
             <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
               Alert threshold <strong style={{ color: 'var(--text)', fontWeight: 700 }}>{noiseThresholdPct}%</strong> — drag the knob to adjust
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <label
+                htmlFor="confidence-threshold"
+                style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}
+              >
+                Confidence threshold
+              </label>
+              <input
+                id="confidence-threshold"
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={confidenceThresholdPct}
+                onChange={(e) => setConfidenceThresholdPct(Number(e.target.value))}
+                aria-valuetext={`${confidenceThresholdPct}%`}
+                style={{ flex: 1, accentColor: 'var(--accent)', cursor: 'pointer', minWidth: 0 }}
+              />
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text)', width: 30, textAlign: 'right' }}>
+                {confidenceThresholdPct}%
+              </span>
             </div>
           </div>
 

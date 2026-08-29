@@ -1,13 +1,18 @@
 import { Agent, dedent } from '@livekit/agents';
 import * as openai from '@livekit/agents-plugin-openai';
-import { TRANSCRIPT_CONFIDENCE_THRESHOLD, buildAudioQualityNote } from './audioQuality.ts';
+import { buildAudioQualityNote } from './audioQuality.ts';
 import { notifySupportTeam } from './tools.ts';
 
 // Builds the Meridian Academy voice assistant.
-// `isEnvironmentNoisy` is a getter (not a snapshot) so onUserTurnCompleted below always reads
-// the latest client-reported noise state (see noiseSignal.ts). `onTurnConfidence` is called
-// with each turn's STT confidence, so the caller can forward it to the client for display.
-export function createAgent(isEnvironmentNoisy: () => boolean, onTurnConfidence: (confidence: number) => void) {
+// `isEnvironmentNoisy` and `getConfidenceThreshold` are getters (not snapshots) so
+// onUserTurnCompleted below always reads the latest client-reported state (see noiseSignal.ts
+// and confidenceThresholdSignal.ts). `onTurnConfidence` is called with each turn's STT
+// confidence, so the caller can forward it to the client for display.
+export function createAgent(
+  isEnvironmentNoisy: () => boolean,
+  onTurnConfidence: (confidence: number) => void,
+  getConfidenceThreshold: () => number,
+) {
   const groqApiKey = process.env.GROQ_API_KEY;
   if (!groqApiKey) throw new Error('GROQ_API_KEY is required');
 
@@ -65,11 +70,12 @@ export function createAgent(isEnvironmentNoisy: () => boolean, onTurnConfidence:
     onUserTurnCompleted(_ctx, chatCtx, newMessage) {
       const confidence = newMessage.transcriptConfidence;
       const noisy = isEnvironmentNoisy();
-      console.log('turn audio quality:', { confidence, isNoisy: noisy });
+      const threshold = getConfidenceThreshold();
+      console.log('turn audio quality:', { confidence, isNoisy: noisy, threshold });
 
       if (confidence !== undefined) onTurnConfidence(confidence);
 
-      const lowConfidence = confidence !== undefined && confidence < TRANSCRIPT_CONFIDENCE_THRESHOLD;
+      const lowConfidence = confidence !== undefined && confidence < threshold;
 
       const note = buildAudioQualityNote(noisy, lowConfidence);
       if (note) {

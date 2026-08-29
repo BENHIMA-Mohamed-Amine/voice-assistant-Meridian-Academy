@@ -1,5 +1,6 @@
-// Below this, a transcript is treated as low-confidence.
-export const TRANSCRIPT_CONFIDENCE_THRESHOLD = 0.6;
+// Below this, a transcript is treated as low-confidence. The client can override this per
+// session (see livekit/confidenceThresholdSignal.ts) — this is only the starting value.
+export const DEFAULT_TRANSCRIPT_CONFIDENCE_THRESHOLD = 0.6;
 
 // Builds a short, factual note added to the chat context for the current turn only. The LLM
 // decides how to phrase and use it (see the Clarity section of the agent's instructions) —

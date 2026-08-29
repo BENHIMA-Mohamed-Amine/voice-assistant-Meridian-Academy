@@ -12,8 +12,10 @@ import * as silero from '@livekit/agents-plugin-silero';
 import * as soniox from '@livekit/agents-plugin-soniox';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_TRANSCRIPT_CONFIDENCE_THRESHOLD } from './agent/audioQuality.ts';
 import { createAgent } from './agent/agent.ts';
 import { publishConfidence } from './livekit/confidenceSignal.ts';
+import { watchConfidenceThreshold } from './livekit/confidenceThresholdSignal.ts';
 import { publishLatencyMetrics } from './livekit/latencyMetrics.ts';
 import { watchNoiseSignal } from './livekit/noiseSignal.ts';
 
@@ -45,6 +47,10 @@ export default defineAgent<ProcessUserData>({
 
   entry: async (ctx: JobContext<ProcessUserData>) => {
     const isEnvironmentNoisy = watchNoiseSignal(ctx.room);
+    const getConfidenceThreshold = watchConfidenceThreshold(
+      ctx.room,
+      DEFAULT_TRANSCRIPT_CONFIDENCE_THRESHOLD,
+    );
 
     // Cartesia synthesizes faster, but Soniox is the TTS here: cheaper, and one model
     // natively covers both English and French without swapping voices per language.
@@ -84,7 +90,11 @@ export default defineAgent<ProcessUserData>({
     });
 
     await session.start({
-      agent: createAgent(isEnvironmentNoisy, (confidence) => publishConfidence(ctx.room, confidence)),
+      agent: createAgent(
+        isEnvironmentNoisy,
+        (confidence) => publishConfidence(ctx.room, confidence),
+        getConfidenceThreshold,
+      ),
       room: ctx.room,
     });
 

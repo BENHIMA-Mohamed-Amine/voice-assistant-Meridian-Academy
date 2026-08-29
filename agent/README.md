@@ -1,147 +1,135 @@
-<a href="https://livekit.io/">
-  <img src="./.github/assets/livekit-mark.png" alt="LiveKit logo" width="100" height="100">
-</a>
+# Meridian Academy — Voice Agent
 
-# LiveKit Agents Starter - Node.js
+* [ ] 
 
-A complete starter project for building voice AI apps with [LiveKit Agents for Node.js](https://github.com/livekit/agents-js) and [LiveKit Cloud](https://cloud.livekit.io/).
+## Project structure
 
-The starter project includes:
-
-- A simple voice AI assistant, ready for extension and customization
-- A voice AI pipeline built on [LiveKit Inference](https://docs.livekit.io/agents/models/inference), providing zero-configuration access to [models](https://docs.livekit.io/agents/models) from top labs
-  - Uses the fast, open-weight Gemma 4 31B model, [hosted by LiveKit](https://docs.livekit.io/agents/models/llm/livekit/) and tuned for optimal performance in voice AI, as the default LLM
-  - Uses Fish Audio S2.1 Pro for TTS, which renders the inline delivery markup that expressive mode relies on
-  - Supports more than 50 models from OpenAI, Cartesia, Deepgram, and other providers
-  - Access to a wide range of other models, including [Realtime models](https://docs.livekit.io/agents/models/realtime), through extensive plugin ecosystem
-- Expressive mode, enabled by default: the framework injects the TTS provider's markup guide into the LLM prompt, so the model emits inline delivery tags (emotion, pacing, non-verbal sounds) that the TTS renders and the transcript never shows
-- Eval suite based on the LiveKit Agents [testing & evaluation framework](https://docs.livekit.io/agents/start/testing)
-- [LiveKit Turn Detector](https://docs.livekit.io/agents/logic/turns/turn-detector/), an end-of-turn model that listens to the user's audio directly, combining semantic understanding with acoustic cues for state-of-the-art accuracy across 14 languages
-- [Background voice cancellation](https://docs.livekit.io/transport/media/noise-cancellation/)
-- Deep session insights from LiveKit [Agent Observability](https://docs.livekit.io/deploy/observability/)
-- A Dockerfile ready for [production deployment to LiveKit Cloud](https://docs.livekit.io/deploy/agents/)
-
-This starter app is compatible with any [custom web/mobile frontend](https://docs.livekit.io/frontends/) or [telephony](https://docs.livekit.io/telephony/).
-
-## Using coding agents
-
-This project is designed to work with coding agents like [Claude Code](https://claude.com/product/claude-code), [Cursor](https://www.cursor.com/), and [Codex](https://openai.com/codex/).
-
-For your convenience, LiveKit offers both a CLI and an [MCP server](https://docs.livekit.io/reference/developer-tools/docs-mcp/) that can be used to browse and search its documentation. The [LiveKit CLI](https://docs.livekit.io/intro/basics/cli/) (`lk docs`) works with any coding agent that can run shell commands. Install it for your platform:
-
-**macOS:**
-
-```console
-brew install livekit-cli
+```
+agent/
+├── src/
+│   ├── main.ts                        Entrypoint. Wires the STT/TTS/VAD pipeline together,
+│   │                                   starts the session, and streams latency metrics.
+│   │
+│   ├── agent/
+│   │   ├── agent.ts                   The assistant itself: persona/instructions, LLM
+│   │   │                               config, the audio-quality note injected per turn,
+│   │   │                               and tool wiring.
+│   │   ├── agent.test.ts              Behavioral evals for the agent (greeting, refusing
+│   │   │                               out-of-scope/harmful requests).
+│   │   ├── audioQuality.ts            Pure logic: builds the "audio quality note" text from
+│   │   │                               (isNoisy, isLowConfidence). Unit-tested in isolation.
+│   │   ├── audioQuality.test.ts       Tests for audioQuality.ts.
+│   │   ├── tools.ts                   The notifySupportTeam tool (posts a completed demo
+│   │   │                               request to Slack).
+│   │   └── email.ts                   Work-email vs. personal-email domain check used by
+│   │                                   the tool.
+│   │
+│   └── livekit/
+│       ├── noiseSignal.ts             Listens for the client's noise-threshold flag on the
+│       │                               'lk.noise' data channel topic.
+│       ├── confidenceSignal.ts        Publishes each turn's STT confidence to the client on
+│       │                               the 'lk.confidence' data channel topic.
+│       ├── confidenceThresholdSignal.ts Listens for the client's confidence-threshold
+│       │                               override on 'lk.confidenceThreshold', overriding the
+│       │                               default in audioQuality.ts for that session.
+│       └── latencyMetrics.ts          Publishes per-turn latency (EOU, LLM TTFT, TTS TTFB,
+│                                       E2E) to the client on the 'lk.metrics' topic.
+│
+├── Dockerfile                         Production container build for LiveKit Cloud deploy.
+├── livekit.toml                       LiveKit Cloud agent deployment config.
+├── .env.example                       Required environment variables (see below).
+└── package.json
 ```
 
-**Linux:**
+## Tech choices
 
-```console
-curl -sSL https://get.livekit.io/cli | bash
-```
+- **STT — Deepgram Flux** (`deepgram/flux-general-multi`, via the `@livekit/agents-plugin-deepgram`
+  plugin directly, not LiveKit Inference). Flux's own phrase-endpointing model provides the
+  end-of-turn signal directly (`turnHandling.turnDetection: 'stt'`), which is faster than
+  waiting on a generic turn detector, and its multilingual model streams interim transcripts,
+  which LiveKit Inference's hosted Flux route did not.
+- **LLM — Groq-hosted Qwen3** (`qwen/qwen3.8-27b`), via the OpenAI-compatible plugin.
+  `reasoningEffort: 'none'` keeps it in instruct mode — this is simple slot-filling dialogue,
+  not a task that benefits from a reasoning pass.
+- **TTS — Soniox**. Cartesia synthesizes faster, but Soniox was chosen here: cheaper, and one
+  model natively covers both English and French without swapping voices per language.
+- **VAD — Silero**, used only for interruption detection (end-of-turn comes from Deepgram Flux
+  above).
 
-**Windows:**
+## Noise & confidence handling
 
-```console
-winget install LiveKit.LiveKitCLI
-```
+- The client measures ambient noise from the raw mic signal and reports a threshold-crossing
+  flag over the `lk.noise` data channel (see `client/src/hooks/useNoiseMeter.ts`).
+- Deepgram Flux returns a per-turn transcription confidence score.
+- Neither one is a hard fallback that bypasses the LLM. Instead, `onUserTurnCompleted`
+  (`src/agent/agent.ts`) injects a factual note into that turn's context — "there's background
+  noise" and/or "ask the visitor to repeat" — and lets the LLM react to it naturally, in its
+  own words, as part of the normal reply.
+- The confidence score itself is also published to the client per turn and shown under each
+  user message bubble in the widget.
+- The confidence threshold is configurable from the widget (alongside the noise threshold),
+  and sent to the agent on the `lk.confidenceThreshold` topic, overriding
+  `DEFAULT_TRANSCRIPT_CONFIDENCE_THRESHOLD` for that session.
 
-The `lk docs` subcommand requires version 2.15.0 or higher. Check your version with `lk --version` and update if needed. Once installed, your coding agent can search and browse LiveKit documentation directly from the terminal:
+## Local setup
 
-```console
-lk docs search "voice agents"
-lk docs get-page /agents/start/voice-ai-quickstart
-```
-
-See the [Coding agent support](https://docs.livekit.io/intro/coding-agents/) guide for more details, including MCP server setup.
-
-The project includes a complete [AGENTS.md](AGENTS.md) file for these assistants. You can modify this file to suit your needs. To learn more about this file, see [https://agents.md](https://agents.md).
-
-## Dev Setup
-
-Create a project from this template with the LiveKit CLI (recommended):
+Requires Node.js 24+ and pnpm.
 
 ```bash
-lk cloud auth
-lk agent init my-agent --template agent-starter-node
-```
-
-The CLI clones the template and configures your environment. Then follow the rest of this guide from [Run the agent](#run-the-agent).
-
-This project uses [pnpm](https://pnpm.io/) as the package manager.
-
-<details>
-<summary>Alternative: Manual setup without the CLI</summary>
-
-Clone the repository and install dependencies:
-
-```console
-cd agent-starter-node
 pnpm install
+cp .env.example .env.local
+# fill in .env.local — see below for what each variable is for
+pnpm dev
 ```
 
-Sign up for [LiveKit Cloud](https://cloud.livekit.io/) then set up the environment by copying `.env.example` to `.env.local` and filling in the required keys:
+`pnpm dev` runs `lk agent dev`, which connects to your LiveKit Cloud project and lets you test
+against the client running locally (or the LiveKit Agents testing console).
 
-- `LIVEKIT_URL`
-- `LIVEKIT_API_KEY`
-- `LIVEKIT_API_SECRET`
+### Environment variables
 
-You can load the LiveKit environment automatically using the [LiveKit CLI](https://docs.livekit.io/intro/basics/cli/):
+| Variable               | Required | Purpose                                                                                                               |
+| ---------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
+| `LIVEKIT_URL`        | Yes      | LiveKit Cloud project WebSocket URL                                                                                   |
+| `LIVEKIT_API_KEY`    | Yes      | LiveKit Cloud project API key                                                                                         |
+| `LIVEKIT_API_SECRET` | Yes      | LiveKit Cloud project API secret                                                                                      |
+| `GROQ_API_KEY`       | Yes      | LLM (Qwen3, via Groq)                                                                                                 |
+| `SONIOX_API_KEY`     | Yes      | TTS                                                                                                                   |
+| `DEEPGRAM_API_KEY`   | Yes      | STT (Flux)                                                                                                            |
+| `SLACK_WEBHOOK_URL`  | No       | Slack notification when a demo request completes. If unset, the tool still succeeds and just skips the Slack message. |
+
+### Other commands
+
+```bash
+pnpm test        # run tests (vitest)
+pnpm typecheck    # tsc --noEmit
+pnpm lint         # eslint
+pnpm start        # production start (used by the Dockerfile)
+```
+
+## Deployment
+
+Deploys to LiveKit Cloud via the LiveKit CLI, using the included `Dockerfile` and
+`livekit.toml`:
 
 ```bash
 lk cloud auth
-lk app env -w -d .env.local
+lk agent deploy
 ```
 
-</details>
+Secrets (the environment variables above) are set separately via `lk agent secrets`, not
+committed to the repo.
 
-## Run the agent
+## Known limitations
 
-To run the agent during development, use the `dev` command:
+- Server-side noise cancellation (Krisp, via LiveKit Cloud) is not enabled — it crashed the
+  agent process on activation in testing and was disabled. Noise reduction currently relies on
+  the browser's default WebRTC audio processing (echo cancellation, noise suppression, auto
+  gain control) rather than an explicit RNNoise-style pipeline.
 
-```console
-pnpm run dev
-```
+## Possible improvements
 
-In production, use the `start` command:
-
-```console
-pnpm run start
-```
-
-## Frontend & Telephony
-
-Get started quickly with our pre-built frontend starter apps, or add telephony support:
-
-| Platform         | Link                                                                                                                | Description                                        |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| **Web**          | [`livekit-examples/agent-starter-react`](https://github.com/livekit-examples/agent-starter-react)                   | Web voice AI assistant with React & Next.js        |
-| **iOS/macOS**    | [`livekit-examples/agent-starter-swift`](https://github.com/livekit-examples/agent-starter-swift)                   | Native iOS, macOS, and visionOS voice AI assistant |
-| **Flutter**      | [`livekit-examples/agent-starter-flutter`](https://github.com/livekit-examples/agent-starter-flutter)               | Cross-platform voice AI assistant app              |
-| **React Native** | [`livekit-examples/voice-assistant-react-native`](https://github.com/livekit-examples/voice-assistant-react-native) | Native mobile app with React Native & Expo         |
-| **Android**      | [`livekit-examples/agent-starter-android`](https://github.com/livekit-examples/agent-starter-android)               | Native Android app with Kotlin & Jetpack Compose   |
-| **Web Embed**    | [`livekit-examples/agent-starter-embed`](https://github.com/livekit-examples/agent-starter-embed)                   | Voice AI widget for any website                    |
-| **Telephony**    | [Documentation](https://docs.livekit.io/telephony/)                                                                 | Add inbound or outbound calling to your agent      |
-
-For advanced customization, see the [complete frontend guide](https://docs.livekit.io/frontends/).
-
-## Using this template repo for your own project
-
-Once you've started your own project based on this repo, you should:
-
-1. **Check in your `pnpm-lock.yaml`**: This file is currently untracked for the template, but you should commit it to your repository for reproducible builds and proper configuration management. (The same applies to `livekit.toml`, if you run your agents in LiveKit Cloud)
-
-2. **Remove the git tracking test**: Delete the "Check files not tracked in git" step from `.github/workflows/tests.yml` since you'll now want this file to be tracked. These are just there for development purposes in the template repo itself.
-
-## Deploying to production
-
-This project is production-ready and includes a working `Dockerfile`. To deploy it to LiveKit Cloud or another environment, see the [deploying to production](https://docs.livekit.io/deploy/agents/) guide.
-
-## Self-hosted LiveKit
-
-You can also self-host LiveKit instead of using LiveKit Cloud. See the [self-hosting](https://docs.livekit.io/transport/self-hosting/local/) guide for more information. If you choose to self-host, you'll need to also use [model plugins](https://docs.livekit.io/agents/models/#plugins) instead of LiveKit Inference and will need to remove the [LiveKit Cloud noise cancellation](https://docs.livekit.io/transport/media/noise-cancellation/) plugin.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- Server-side noise cancellation, once the crash is root-caused.
+- An LLM observability tool (e.g. LangSmith or Langfuse) to trace conversations, tool calls,
+  and latency across turns.
+- Scenario-based conversation tests (noisy environment, multilingual switching, personal-email
+  rejection) beyond the current unit and behavioral evals.
