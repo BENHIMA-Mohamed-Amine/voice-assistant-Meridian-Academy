@@ -78,6 +78,9 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
   const micVolumes = useMultibandTrackVolume(microphoneTrack?.track as LocalAudioTrack | undefined, {
     bands: 5,
   });
+  const micLevelRaw = micVolumes.length ? micVolumes.reduce((a, b) => a + b, 0) / micVolumes.length : 0;
+  // sqrt compresses the curve so normal speaking volume (a small raw RMS) still reads as a strong pulse
+  const micLevel = Math.sqrt(micLevelRaw);
   const [isCloseHovered, setIsCloseHovered] = useState(false);
   const transcriptRef = useRef<HTMLDivElement>(null);
 
@@ -200,17 +203,38 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
             borderBottom: '1px solid var(--border)',
           }}
         >
-          <div
-            className={isActive ? 'glow-pulse' : undefined}
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              flexShrink: 0,
-              background: dotColor,
-              color: dotColor,
-            }}
-          />
+          <div style={{ position: 'relative', width: 8, height: 8, flexShrink: 0 }}>
+            {isActive && (
+              <>
+                <div
+                  className="ring-pulse"
+                  style={{
+                    position: 'absolute',
+                    inset: -5,
+                    borderRadius: '50%',
+                    background: `color-mix(in oklch, ${dotColor} 35%, transparent)`,
+                  }}
+                />
+                <div
+                  className="ring-pulse-delayed"
+                  style={{
+                    position: 'absolute',
+                    inset: -2,
+                    borderRadius: '50%',
+                    background: `color-mix(in oklch, ${dotColor} 50%, transparent)`,
+                  }}
+                />
+              </>
+            )}
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                background: dotColor,
+              }}
+            />
+          </div>
           <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{stateLabel}</div>
           <div style={{ flexGrow: 1 }} />
           <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text)' }}>
@@ -254,6 +278,7 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
         {/* Transcript */}
         <div
           ref={transcriptRef}
+          className="no-scrollbar"
           style={{
             flex: 1,
             minHeight: 0,
@@ -298,13 +323,14 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
           style={{
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             gap: 14,
             padding: '14px 18px',
             background: 'var(--panel-bg-2)',
             borderTop: '1px solid var(--border)',
           }}
         >
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 7 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div
                 style={{
@@ -360,33 +386,47 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 5,
+              width: 76,
+              flexShrink: 0,
+            }}
+          >
             <div style={{ position: 'relative', width: 48, height: 48 }}>
-              {isMicrophoneEnabled &&
-                micVolumes.map((v, i) => {
-                  const angle = (i / micVolumes.length) * Math.PI * 2;
-                  const radius = 30;
-                  const size = 6 + Math.min(1, v * 3) * 8;
-                  const x = Math.cos(angle) * radius;
-                  const y = Math.sin(angle) * radius;
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        position: 'absolute',
-                        top: `calc(50% + ${y}px - ${size / 2}px)`,
-                        left: `calc(50% + ${x}px - ${size / 2}px)`,
-                        width: size,
-                        height: size,
-                        borderRadius: '50%',
-                        background: 'var(--accent)',
-                        opacity: 0.25 + Math.min(0.6, v * 4),
-                        transition: 'width 80ms linear, height 80ms linear, opacity 80ms linear',
-                        pointerEvents: 'none',
-                      }}
-                    />
-                  );
-                })}
+              {isMicrophoneEnabled && (
+                <>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: -4,
+                      borderRadius: '50%',
+                      background: 'var(--accent)',
+                      filter: 'blur(3px)',
+                      opacity: 0.1 + 0.22 * Math.min(1, micLevel * 1.8),
+                      transform: `scale(${1 + Math.min(1, micLevel * 1.8) * 0.3})`,
+                      transition: 'transform 90ms ease-out, opacity 90ms ease-out',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      borderRadius: '50%',
+                      background: 'var(--accent)',
+                      filter: 'blur(1.5px)',
+                      opacity: 0.15 + 0.3 * Math.min(1, micLevel * 1.8),
+                      transform: `scale(${1 + Math.min(1, micLevel * 1.8) * 0.45})`,
+                      transition: 'transform 90ms ease-out, opacity 90ms ease-out',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                </>
+              )}
             <button
               onClick={() => localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled)}
               style={{
@@ -441,7 +481,7 @@ function WidgetPanel({ onClose }: { onClose: () => void }) {
               </svg>
             </button>
             </div>
-            <div style={{ fontSize: 9, fontWeight: 500, color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 9, fontWeight: 500, color: 'var(--text-muted)', textAlign: 'center', whiteSpace: 'nowrap' }}>
               {isMicrophoneEnabled ? 'Tap to mute' : 'Tap to unmute'}
             </div>
           </div>
@@ -468,10 +508,10 @@ function Launcher({ onOpen }: { onOpen: () => void }) {
       }}
     >
       <div
-        className="glow-pulse"
         style={{ position: 'relative', width: 64, height: 64, borderRadius: '50%', color: 'var(--accent)' }}
       >
         <div
+          className="ring-pulse"
           style={{
             position: 'absolute',
             inset: -14,
@@ -480,6 +520,7 @@ function Launcher({ onOpen }: { onOpen: () => void }) {
           }}
         />
         <div
+          className="ring-pulse-delayed"
           style={{
             position: 'absolute',
             inset: -6,

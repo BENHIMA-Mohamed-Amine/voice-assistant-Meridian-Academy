@@ -36,25 +36,38 @@ a:hover {
   color: var(--accent-strong);
 }
 
-@keyframes glow-pulse {
+
+@keyframes ring-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 3px color-mix(in oklch, currentColor 35%, transparent),
-      0 0 8px 2px color-mix(in oklch, currentColor 45%, transparent);
+    transform: scale(1);
+    opacity: 1;
   }
   50% {
-    box-shadow: 0 0 0 6px color-mix(in oklch, currentColor 18%, transparent),
-      0 0 16px 4px color-mix(in oklch, currentColor 25%, transparent);
+    transform: scale(1.2);
+    opacity: 0.4;
   }
 }
 
-.glow-pulse {
-  animation: glow-pulse 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+.ring-pulse {
+  animation: ring-pulse 2.2s ease-in-out infinite;
+}
+
+.ring-pulse-delayed {
+  animation: ring-pulse 2.2s ease-in-out infinite;
+  animation-delay: 0.3s;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .glow-pulse {
+  .ring-pulse,
+  .ring-pulse-delayed {
     animation: none;
-    box-shadow: 0 0 0 4px color-mix(in oklch, currentColor 30%, transparent),
-      0 0 10px 3px color-mix(in oklch, currentColor 35%, transparent);
   }
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
