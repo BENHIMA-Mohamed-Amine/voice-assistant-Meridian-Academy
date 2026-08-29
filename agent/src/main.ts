@@ -1,16 +1,16 @@
 import {
   type JobContext,
   type JobProcess,
-  type VAD,
   ServerOptions,
+  type VAD,
   cli,
   defineAgent,
   inference,
   voice,
 } from '@livekit/agents';
-import { NoiseCancellation } from '@livekit/noise-cancellation-node';
 import * as silero from '@livekit/agents-plugin-silero';
 import * as soniox from '@livekit/agents-plugin-soniox';
+// import { NoiseCancellation } from '@livekit/noise-cancellation-node'; // see inputOptions below
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { createAgent } from './agent.ts';
@@ -53,12 +53,18 @@ export default defineAgent<ProcessUserData>({
       // module's own top-level code, so the plugin's default would otherwise capture `undefined`.
       stt: new soniox.STT({
         model: 'stt-rt-v5',
-        languageHints: ['en'],
+        languageHints: ['en', 'fr'],
         apiKey: SONIOX_API_KEY,
       }),
 
       // Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
+      // No `language` here — the agent switches between English and French per the prompt's
+      // Language rule, so hardcoding one would fight that. return_timestamps isn't in this
+      // Node.js plugin's typed options (Python-only or a raw API field not yet exposed here).
       tts: new soniox.TTS({
+        model: 'tts-rt-v2',
+        voice: 'Daniel',
+        speed: 1,
         apiKey: SONIOX_API_KEY,
       }),
 
@@ -76,8 +82,9 @@ export default defineAgent<ProcessUserData>({
         // VAD-based interruption (standard mode) — simpler and cheaper than adaptive
         // (context-aware barge-in) mode. Revisit adaptive mode later, closer to production.
         interruption: { mode: 'vad' },
-        // Allow the LLM to generate a response while waiting for the end of turn
-        preemptiveGeneration: { enabled: true },
+        // Disabled — was causing duplicated/fragmented replies (an early speculative
+        // generation and the real one both getting forwarded). Revisit later if latency needs it.
+        preemptiveGeneration: { enabled: false },
       },
 
       // Expressive mode injects the TTS provider's markup guide into the LLM prompt, so the model
@@ -92,9 +99,12 @@ export default defineAgent<ProcessUserData>({
       agent: createAgent(),
       room: ctx.room,
       inputOptions: {
-        // Krisp background noise suppression (NC) — removes environmental noise
-        // (traffic, fans, music) while preserving speech. Included with LiveKit Cloud, no extra cost.
-        noiseCancellation: NoiseCancellation(),
+        // Disabled — the native NC processor crashes the whole agent process with a fatal
+        // C++ exception ("Input and output sample rates must be equal") as soon as it
+        // activates. NoiseCancellation() takes no config to fix the mismatch directly.
+        // This was a bonus feature (server-side noise cleanup), not a spec requirement, so
+        // disabling unblocks everything else; revisit as its own investigation later.
+        // noiseCancellation: NoiseCancellation(),
       },
     });
 
@@ -112,10 +122,11 @@ export default defineAgent<ProcessUserData>({
     // Join the room and connect to the user
     await ctx.connect();
 
-    // Greet the user on joining
-    session.generateReply({
-      instructions: 'Greet the user in a helpful and friendly manner.',
-    });
+    // Static greeting (TTS only, no LLM call) — faster, cheaper, and avoids depending on
+    // the LLM producing a good opener on cold start every time.
+    session.say(
+      "Hi there, welcome to Meridian Academy! I'm here to help you book a demo with our team. Whenever you're ready, just say the word and we'll get started.",
+    );
   },
 });
 

@@ -11,6 +11,9 @@ importers:
       '@livekit/agents':
         specifier: ^1.6.3
         version: 1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3)
+      '@livekit/agents-plugin-openai':
+        specifier: ~1.7.1
+        version: 1.7.1(@livekit/agents@1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3))(@livekit/rtc-node@0.13.34)(zod@4.4.3)
       '@livekit/agents-plugin-silero':
         specifier: ^1.7.1
         version: 1.7.1(@livekit/agents@1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3))(@livekit/rtc-node@0.13.34)
@@ -338,6 +341,13 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@livekit/agents-plugin-openai@1.7.1':
+    resolution: {integrity: sha512-BCvp+Mx2ZkrxQIAJgbvmr/xtkQWNIPVxY2tLHiMCDo7QhOmho2dgYrZ5Mk9/5VoBROubfdRz6cguKDQcBQHVAg==}
+    peerDependencies:
+      '@livekit/agents': 1.7.1
+      '@livekit/rtc-node': ^0.13.34
+      zod: ^3.25.76 || ^4.1.8
 
   '@livekit/agents-plugin-silero@1.7.1':
     resolution: {integrity: sha512-psdf0OLfMvYwVyM9kksI/lzqhYOrIQU0dJ2yPbn+zoW13fCFcM1hDB3JggS9WLygZg0Y7pnhRL/XG0Oa8bdRiA==}
@@ -2142,6 +2152,21 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@livekit/agents-plugin-openai@1.7.1(@livekit/agents@1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3))(@livekit/rtc-node@0.13.34)(zod@4.4.3)':
+    dependencies:
+      '@livekit/agents': 1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3)
+      '@livekit/mutex': 1.1.1
+      '@livekit/rtc-node': 0.13.34
+      openai: 6.49.0(ws@8.21.3)(zod@4.4.3)
+      ws: 8.21.3
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-provider-node'
+      - '@smithy/hash-node'
+      - '@smithy/signature-v4'
+      - bufferutil
+      - utf-8-validate
 
   '@livekit/agents-plugin-silero@1.7.1(@livekit/agents@1.7.1(@livekit/rtc-node@0.13.34)(@types/node@24.13.3)(supports-color@7.2.0)(typescript@5.9.3)(zod@4.4.3))(@livekit/rtc-node@0.13.34)':
     dependencies:
