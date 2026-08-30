@@ -16,6 +16,20 @@ the app as a whole.
 
 ## Demo
 
+https://github.com/user-attachments/assets/87d8ce10-dc4f-40bb-a87e-75342328ea03
+
+The demo shows the assistant booking a training demo, exercising several features along the way:
+
+- **Confidence-gated clarification** — raising the transcript confidence threshold so a normal STT transcript falls below it, causing the assistant to notice and ask a clarification question instead of guessing.
+- **Noise-aware acknowledgment** — lowering the noise threshold while mimicking a noisy environment, prompting the assistant to notice and tell the visitor it's having trouble hearing them.
+- **Smooth multilingual switching** — the conversation moves fluidly between English and French mid-conversation (the underlying model also supports Spanish and other languages, not just these two).
+- **Low average latency** — end-to-end response time stays around ~1.3s throughout the call.
+- **Successful Slack notification** — once the booking details are collected, the assistant notifies the team in Slack.
+- **Prompt-injection resistance** — an attempt to break the assistant's instructions mid-conversation is handled correctly, with the LLM staying on task instead of complying.
+- The conversation is then closed out.
+- **Full trace observability** — every LLM call, tool call, and STT/TTS span from the session is saved in Langfuse for inspection afterward.
+
+  
 ## Features
 
 - **Real-time voice conversation** — streaming speech-to-text → LLM → streaming text-to-speech,
