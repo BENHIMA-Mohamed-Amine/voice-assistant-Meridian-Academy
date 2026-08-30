@@ -89,9 +89,9 @@ The demo shows the assistant booking a training demo, exercising several feature
 | Layer | Choice | Why (see `agent/README.md` for detail) |
 | --- | --- | --- |
 | Realtime transport | LiveKit Cloud | Managed WebRTC, agent hosting, and dispatch |
-| STT | Deepgram Flux | Own phrase-endpointing for fast turn detection; streams interim transcripts |
+| STT | Deepgram Flux | Built-in turn detector — end-of-turn comes straight from the STT model instead of waiting on a separate generic turn detector, which reduces latency |
 | LLM | Qwen3 (via Groq) | Fast, cheap, instruct mode for simple slot-filling dialogue |
-| TTS | Soniox | Cheaper than Cartesia, one model natively covers English + French |
+| TTS | Soniox | Multilingual and cheap — one voice covers both US English and Parisian French natively. A bit slower than Cartesia, which is pricier and doesn't have a single voice spanning both languages |
 | VAD | Silero | Interruption detection |
 | Observability | Langfuse (optional) | Per-session LLM/tool/STT/TTS trace export, alongside LiveKit Cloud's own Agent insights |
 | Backend | Node.js / TypeScript | `agent/` |
