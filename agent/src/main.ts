@@ -107,8 +107,11 @@ export default defineAgent<ProcessUserData>({
           minDelay: 0,
           maxDelay: 3000,
         },
-        // Simpler and cheaper than adaptive (context-aware) interruption handling.
-        interruption: { mode: 'vad' },
+        // Context-aware barge-in model (not raw VAD): tells a genuine interruption apart from
+        // backchanneling — short listener sounds like "mm-hmm", "okay", or a stray cough —
+        // so those don't cut the agent off mid-reply. Free on LiveKit Cloud; rate-limited
+        // in local dev. Requires the STT to support aligned transcripts.
+        interruption: { mode: 'adaptive' },
         // Disabled: caused duplicated/fragmented replies in testing.
         preemptiveGeneration: { enabled: false },
       },

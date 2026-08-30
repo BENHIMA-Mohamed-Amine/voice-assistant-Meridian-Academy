@@ -43,6 +43,38 @@ export function UsageGuide() {
         Open the assistant in the corner and book a demo — here&apos;s what it expects, and a few things
         you can try.
       </p>
+      <div
+        role="note"
+        style={{
+          display: 'flex',
+          gap: 10,
+          alignItems: 'flex-start',
+          padding: '12px 14px',
+          marginBottom: 28,
+          borderRadius: 10,
+          border: '1px solid color-mix(in oklch, var(--warn) 35%, var(--border))',
+          background: 'color-mix(in oklch, var(--warn) 12%, transparent)',
+        }}
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          style={{ flexShrink: 0, marginTop: 1 }}
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" stroke="var(--warn)" strokeWidth="1.8" />
+          <path d="M12 7.5v6" stroke="var(--warn)" strokeWidth="1.8" strokeLinecap="round" />
+          <circle cx="12" cy="16.5" r="1" fill="var(--warn)" />
+        </svg>
+        <span style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--text)' }}>
+          <strong style={{ fontWeight: 600 }}>Heads up:</strong> this demo runs on a free hosting tier,
+          so the very first connection of the day can be slow to join or fail outright due to a cold
+          start. That&apos;s expected, not a bug — just reload the page and reconnect, and it&apos;ll
+          work right away.
+        </span>
+      </div>
       <ul
         style={{
           listStyle: 'none',

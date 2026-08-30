@@ -28,8 +28,10 @@ client/
 │   │
 │   └── hooks/
 │       ├── useNoiseMeter.ts           Tracks ambient noise from the mic (a fast-fall/slow-rise
-│       │                               floor tracker), exposes the configurable threshold,
-│       │                               and reports threshold crossings to the agent.
+│       │                               floor tracker, frozen while the visitor is speaking so
+│       │                               their own voice isn't read as noise), exposes the
+│       │                               configurable threshold, and reports threshold crossings
+│       │                               to the agent.
 │       ├── useLatencyMetrics.ts        Subscribes to per-turn latency numbers from the agent.
 │       ├── useTranscriptConfidence.ts Subscribes to per-turn STT confidence from the agent
 │       │                               and attaches it to the matching transcript bubble.

@@ -1,7 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useAgent, useLocalParticipant, useMultibandTrackVolume, useSessionMessages } from '@livekit/components-react';
+import {
+  useAgent,
+  useIsSpeaking,
+  useLocalParticipant,
+  useMultibandTrackVolume,
+  useSessionMessages,
+} from '@livekit/components-react';
 import { type LocalAudioTrack } from 'livekit-client';
 import { useConfidenceThreshold } from '../hooks/useConfidenceThreshold';
 import { useLatencyMetrics } from '../hooks/useLatencyMetrics';
@@ -39,6 +45,7 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
   const agent = useAgent();
   const { messages } = useSessionMessages();
   const { isMicrophoneEnabled, localParticipant, microphoneTrack } = useLocalParticipant();
+  const isSpeaking = useIsSpeaking(localParticipant);
   const micVolumes = useMultibandTrackVolume(microphoneTrack?.track as LocalAudioTrack | undefined, {
     bands: 5,
   });
@@ -55,7 +62,7 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
     noiseBarRef,
     isDraggingThreshold,
     handleThresholdPointerDown,
-  } = useNoiseMeter(micLevel);
+  } = useNoiseMeter(micLevel, isSpeaking);
   const confidenceByKey = useTranscriptConfidence(messages);
   const { confidenceThresholdPct, setConfidenceThresholdPct } = useConfidenceThreshold();
 

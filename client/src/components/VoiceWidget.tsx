@@ -8,8 +8,18 @@ import { WidgetPanel } from './WidgetPanel';
 
 const TOKEN_SOURCE = TokenSource.endpoint('/api/token');
 
+// LiveKit Cloud's free-tier scale-to-zero cold start takes ~10-20s (see agent/README.md's
+// Known limitations), right at the SDK's 20s default agentConnectTimeoutMilliseconds — so a
+// visitor's first connection can time out on nothing but normal cold-start variance. Raised
+// well past that worst case rather than tuned tight, since a real failure just takes longer
+// to surface, not silently hang.
+const AGENT_CONNECT_TIMEOUT_MS = 60_000;
+
 export default function VoiceWidget() {
-  const session = useSession(TOKEN_SOURCE, { agentName: 'agent' });
+  const session = useSession(TOKEN_SOURCE, {
+    agentName: 'agent',
+    agentConnectTimeoutMilliseconds: AGENT_CONNECT_TIMEOUT_MS,
+  });
   const [isOpen, setIsOpen] = useState(false);
 
   // Only end the session on unmount if it was actually started — connecting is deferred

@@ -38,14 +38,19 @@ The demo shows the assistant booking a training demo, exercising several feature
   not just once a turn finishes.
 - **Bot state indicator** — listening / thinking / speaking, shown live in the widget header.
 - **Ambient noise meter** — a real-time vumeter driven by the visitor's own microphone signal,
-  with a visible, draggable threshold.
+  with a visible, draggable threshold. Gated on LiveKit's active-speaker detection, so the
+  visitor's own voice is never mistaken for background noise — only silence updates the
+  reading.
 - **Noise- and confidence-aware responses** — the assistant is told, per turn, whether the
   visitor's environment is noisy and how confident the transcription was, and reacts to that
   naturally in its own reply (acknowledging noise, asking the visitor to repeat) rather than
   guessing at a bad transcript.
 - **Transcript confidence displayed per message** — each visitor message shows the STT
   confidence score it was transcribed with.
-- **Barge-in** — the visitor can interrupt the assistant mid-sentence.
+- **Adaptive barge-in** — the visitor can interrupt the assistant mid-sentence. Interruption
+  detection is context-aware, not raw VAD: it tells a genuine interruption apart from
+  conversational backchanneling ("mm-hmm", "okay", a stray cough), so those don't cut the
+  assistant off mid-reply.
 - **Multilingual (English + French)** — detected automatically per turn, on both the STT and
   TTS side, with no need for the visitor to pick a language.
 - **Live per-turn latency breakdown** — end-of-turn delay, LLM time-to-first-token, TTS

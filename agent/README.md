@@ -61,6 +61,12 @@ agent/
     (~400-600ms) off the very first thing the visitor hears.
 - **VAD — Silero**, used only for interruption detection (end-of-turn comes from Deepgram Flux
   above).
+- **Interruption handling — adaptive** (`turnHandling.interruption.mode: 'adaptive'`). A
+  context-aware barge-in model, not raw VAD: it tells a genuine interruption apart from
+  conversational backchanneling — "mm-hmm", "okay", a stray cough — so those don't cut the
+  agent off mid-reply. Free for agents deployed to LiveKit Cloud; rate-limited for local dev.
+  Requires Agents SDK Node.js v1.2.0+ (this project is on ^1.6.3) and an STT that supports
+  aligned transcripts.
 - **Observability — Langfuse (optional)**. See [Observability](#observability) below.
 
 ## Noise & confidence handling

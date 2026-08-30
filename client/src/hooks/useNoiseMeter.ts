@@ -26,8 +26,10 @@ export interface NoiseMeter {
 }
 
 // Tracks ambient noise level from the mic's raw RMS, and reports sustained over-threshold
-// state to the agent over the 'lk.noise' data channel.
-export function useNoiseMeter(micLevel: number): NoiseMeter {
+// state to the agent over the 'lk.noise' data channel. `isSpeaking` (from LiveKit's active
+// speaker detection) freezes the floor while the visitor is talking, so their own voice isn't
+// mistaken for ambient noise — only silence updates the estimate.
+export function useNoiseMeter(micLevel: number, isSpeaking: boolean): NoiseMeter {
   const rawNoiseLevelPct = Math.round(Math.min(1, micLevel * NOISE_LEVEL_SCALE) * 100);
   const [noiseLevelPct, setNoiseLevelPct] = useState(0);
 
@@ -38,12 +40,15 @@ export function useNoiseMeter(micLevel: number): NoiseMeter {
     const now = performance.now();
     const dtMs = now - (lastFloorUpdateRef.current ?? now);
     lastFloorUpdateRef.current = now;
+    // Reset the baseline but skip the update itself, so the gap while the visitor was
+    // speaking isn't counted as elapsed time once tracking resumes on silence.
+    if (isSpeaking) return;
     setNoiseLevelPct((floor) => {
       const tau = rawNoiseLevelPct < floor ? NOISE_FLOOR_FALL_TAU_MS : NOISE_FLOOR_RISE_TAU_MS;
       const next = floor + (rawNoiseLevelPct - floor) * (1 - Math.exp(-dtMs / tau));
       return Math.round(next);
     });
-  }, [rawNoiseLevelPct]);
+  }, [rawNoiseLevelPct, isSpeaking]);
 
   const [noiseThresholdPct, setNoiseThresholdPct] = useState(DEFAULT_NOISE_THRESHOLD_PCT);
   const isOverThreshold = noiseLevelPct > noiseThresholdPct;
