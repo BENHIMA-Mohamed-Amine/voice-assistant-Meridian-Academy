@@ -14,6 +14,8 @@ Two parts, deployed separately:
 Each has its own README with its file-by-file structure and setup instructions. This one covers
 the app as a whole.
 
+## Demo
+
 ## Features
 
 - **Real-time voice conversation** — streaming speech-to-text → LLM → streaming text-to-speech,
