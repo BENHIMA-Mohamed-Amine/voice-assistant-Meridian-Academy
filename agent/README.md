@@ -1,7 +1,5 @@
 # Meridian Academy — Voice Agent
 
-* [ ] 
-
 ## Project structure
 
 ```
@@ -96,18 +94,18 @@ against the client running locally (or the LiveKit Agents testing console).
 
 ### Environment variables
 
-| Variable               | Required | Purpose                                                                                                               |
-| ---------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
-| `LIVEKIT_URL`        | Yes      | LiveKit Cloud project WebSocket URL                                                                                   |
-| `LIVEKIT_API_KEY`    | Yes      | LiveKit Cloud project API key                                                                                         |
-| `LIVEKIT_API_SECRET` | Yes      | LiveKit Cloud project API secret                                                                                      |
-| `GROQ_API_KEY`       | Yes      | LLM (Qwen3, via Groq)                                                                                                 |
-| `SONIOX_API_KEY`     | Yes      | TTS                                                                                                                   |
-| `DEEPGRAM_API_KEY`   | Yes      | STT (Flux)                                                                                                            |
-| `SLACK_WEBHOOK_URL`  | No       | Slack notification when a demo request completes. If unset, the tool still succeeds and just skips the Slack message. |
-| `LANGFUSE_PUBLIC_KEY` | No | Langfuse observability — traces LLM calls, tool calls, and STT/TTS spans per session. If unset (along with the two below), tracing is skipped entirely. |
-| `LANGFUSE_SECRET_KEY` | No | Langfuse secret key, paired with the public key above. |
-| `LANGFUSE_BASE_URL` | No | Langfuse instance URL, e.g. `https://cloud.langfuse.com` (EU) or `https://us.cloud.langfuse.com` (US). |
+| Variable                | Required | Purpose                                                                                                                                                  |
+| ----------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LIVEKIT_URL`         | Yes      | LiveKit Cloud project WebSocket URL                                                                                                                      |
+| `LIVEKIT_API_KEY`     | Yes      | LiveKit Cloud project API key                                                                                                                            |
+| `LIVEKIT_API_SECRET`  | Yes      | LiveKit Cloud project API secret                                                                                                                         |
+| `GROQ_API_KEY`        | Yes      | LLM (Qwen3, via Groq)                                                                                                                                    |
+| `SONIOX_API_KEY`      | Yes      | TTS                                                                                                                                                      |
+| `DEEPGRAM_API_KEY`    | Yes      | STT (Flux)                                                                                                                                               |
+| `SLACK_WEBHOOK_URL`   | No       | Slack notification when a demo request completes. If unset, the tool still succeeds and just skips the Slack message.                                    |
+| `LANGFUSE_PUBLIC_KEY` | No       | Langfuse observability — traces LLM calls, tool calls, and STT/TTS spans per session. If unset (along with the two below), tracing is skipped entirely. |
+| `LANGFUSE_SECRET_KEY` | No       | Langfuse secret key, paired with the public key above.                                                                                                   |
+| `LANGFUSE_BASE_URL`   | No       | Langfuse instance URL, e.g.`https://cloud.langfuse.com` (EU) or `https://us.cloud.langfuse.com` (US).                                                |
 
 ### Other commands
 
@@ -160,7 +158,7 @@ working too, not just Langfuse.
 
 ## Testing
 
-Two layers, per [LiveKit's testing guide](https://docs.livekit.io/agents/start/testing/):
+Two layers, per [LiveKit&#39;s testing guide](https://docs.livekit.io/agents/start/testing/):
 
 - **Turn-level (`tests/`, `pnpm test`)** — Vitest behavioral evals and unit tests, asserting on
   individual turns via `session.run()`. Runs locally/CI, text-mode, deterministic.
@@ -172,6 +170,7 @@ Two layers, per [LiveKit's testing guide](https://docs.livekit.io/agents/start/t
   ```bash
   lk agent simulate --scenarios scenarios.yaml
   ```
+
   Runs on LiveKit Cloud (beta feature), against your authenticated `lk` project. Run scenarios
   one at a time (`--concurrency 1`) rather than back-to-back — Groq's free-tier rate limit for
   `qwen/qwen3.8-27b` (8,000 tokens/minute) is easy to exhaust across multiple simulated
