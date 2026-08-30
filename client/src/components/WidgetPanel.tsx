@@ -320,8 +320,8 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
                               height: 5,
                               borderRadius: '50%',
                               flexShrink: 0,
-                              background: isLowConfidence ? 'var(--warn)' : 'var(--accent-ink)',
-                              opacity: isLowConfidence ? 1 : 0.55,
+                              background: isLowConfidence ? 'var(--warn)' : 'var(--success)',
+                              opacity: 1,
                             }}
                           />
                           <span
@@ -337,7 +337,7 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
                             <span
                               style={{
                                 fontWeight: 800,
-                                color: isLowConfidence ? 'var(--warn)' : 'var(--accent-ink)',
+                                color: isLowConfidence ? 'var(--warn)' : 'var(--success)',
                                 opacity: 1,
                               }}
                             >

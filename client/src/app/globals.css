@@ -14,6 +14,7 @@
   --accent-strong: oklch(0.68 0.16 50);
   --accent-ink: oklch(0.18 0.02 55);
   --warn: oklch(0.62 0.19 25);
+  --success: oklch(0.62 0.17 145);
   /* State colors — same chroma/lightness as --accent, hue varied per bot state */
   --state-listening: oklch(0.74 0.15 55);
   --state-thinking: oklch(0.74 0.15 290);
