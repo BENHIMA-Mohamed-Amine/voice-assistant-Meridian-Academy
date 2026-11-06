@@ -12,7 +12,7 @@ import { type LocalAudioTrack } from 'livekit-client';
 import { useConfidenceThreshold } from '../hooks/useConfidenceThreshold';
 import { useLatencyMetrics } from '../hooks/useLatencyMetrics';
 import { useNoiseMeter } from '../hooks/useNoiseMeter';
-import { messageKey, useTranscriptConfidence } from '../hooks/useTranscriptConfidence';
+import { useTurns } from '../hooks/useTurns';
 
 const formatMs = (ms: number | undefined) => (ms === undefined ? '—' : `${ms}ms`);
 
@@ -44,6 +44,7 @@ const STATE_DOT_COLORS: Record<string, string> = {
 export function WidgetPanel({ onClose }: { onClose: () => void }) {
   const agent = useAgent();
   const { messages } = useSessionMessages();
+  const turns = useTurns(messages);
   const { isMicrophoneEnabled, localParticipant, microphoneTrack } = useLocalParticipant();
   const isSpeaking = useIsSpeaking(localParticipant);
   const micVolumes = useMultibandTrackVolume(microphoneTrack?.track as LocalAudioTrack | undefined, {
@@ -63,12 +64,16 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
     isDraggingThreshold,
     handleThresholdPointerDown,
   } = useNoiseMeter(micLevel, isSpeaking);
-  const confidenceByKey = useTranscriptConfidence(messages);
   const { confidenceThresholdPct, setConfidenceThresholdPct } = useConfidenceThreshold();
 
+  // Keyed on a cheap content fingerprint, not the `turns` array reference -- that
+  // reference can change on unrelated re-renders (e.g. the mic-level meter, many
+  // times a second), which would otherwise re-trigger this on every render and pin
+  // the view to the bottom, blocking manual scroll entirely.
+  const turnsFingerprint = turns.map((t) => `${t.id}:${t.text.length}:${t.pending ? 1 : 0}`).join(',');
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight });
-  }, [messages]);
+  }, [turnsFingerprint]);
 
   const stateLabel = STATE_LABELS[agent.state] ?? STATE_LABELS.idle;
   const isActive = ACTIVE_STATES.has(agent.state);
@@ -277,31 +282,50 @@ export function WidgetPanel({ onClose }: { onClose: () => void }) {
             background: 'var(--panel-bg)',
           }}
         >
-          {messages
-            .filter((m) => m.type === 'userTranscript' || m.type === 'agentTranscript')
-            .map((m) => {
-              const isUser = m.type === 'userTranscript';
-              const text = 'message' in m ? m.message : '';
-              const confidence = isUser ? confidenceByKey[messageKey(m)] : undefined;
-              const isLowConfidence = confidence !== undefined && confidence < confidenceThresholdPct / 100;
-              return (
+          {turns.map((turn) => {
+            const isUser = turn.role === 'user';
+            const confidence = turn.confidence;
+            const isLowConfidence = confidence !== undefined && confidence < confidenceThresholdPct / 100;
+            return (
+              <div
+                key={turn.id}
+                style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}
+              >
                 <div
-                  key={m.id}
-                  style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}
+                  style={{
+                    maxWidth: '78%',
+                    padding: '10px 13px',
+                    fontSize: 13.5,
+                    lineHeight: 1.45,
+                    background: isUser ? 'var(--accent)' : 'var(--surface)',
+                    color: isUser ? 'var(--accent-ink)' : 'var(--text)',
+                    borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  }}
                 >
-                  <div
-                    style={{
-                      maxWidth: '78%',
-                      padding: '10px 13px',
-                      fontSize: 13.5,
-                      lineHeight: 1.45,
-                      background: isUser ? 'var(--accent)' : 'var(--surface)',
-                      color: isUser ? 'var(--accent-ink)' : 'var(--text)',
-                      borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                    }}
-                  >
-                    {text}
-                    {confidence !== undefined && (
+                  {turn.pending ? (
+                    <span
+                      aria-label="Transcribing…"
+                      style={{ display: 'inline-flex', gap: 4, padding: '2px 0' }}
+                    >
+                      {[0, 1, 2].map((i) => (
+                        <span
+                          key={i}
+                          className="typing-dot"
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: '50%',
+                            background: 'var(--accent-ink)',
+                            opacity: 0.6,
+                            animationDelay: `${i * 150}ms`,
+                          }}
+                        />
+                      ))}
+                    </span>
+                  ) : (
+                    turn.text
+                  )}
+                  {confidence !== undefined && (
                       <div
                         style={{
                           marginTop: 7,
