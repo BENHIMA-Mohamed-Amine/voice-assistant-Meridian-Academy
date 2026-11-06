@@ -6,8 +6,11 @@ real-world conditions.
 
 Two parts, deployed separately:
 
-- **[`agent/`](agent/)** — the LiveKit Agents worker (Node.js/TypeScript): speech-to-text, the
-  LLM conversation, text-to-speech, noise/confidence handling. Deploys to LiveKit Cloud.
+- **[`agent-python/`](agent-python/)** — the LiveKit Agents worker (Python), migrated from the
+  original TypeScript version since Python is what I use the most day to day. Deployed backend.
+  Speech-to-text, the LLM conversation, text-to-speech, noise/confidence handling. Deploys to
+  LiveKit Cloud.
+- **[`agent/`](agent/)** — the original Node.js/TypeScript worker, kept for reference.
 - **[`client/`](client/)** — the Next.js voice widget: connects to the room, renders the live
   transcript, noise meter, and latency readout. Deploys to Vercel.
 
@@ -91,15 +94,14 @@ The demo shows the assistant booking a training demo, exercising several feature
 
 ## Tech stack
 
-| Layer | Choice | Why (see `agent/README.md` for detail) |
+| Layer | Choice | Why (see `agent-python/README.md` for detail) |
 | --- | --- | --- |
 | Realtime transport | LiveKit Cloud | Managed WebRTC, agent hosting, and dispatch |
-| STT | Deepgram Flux | Built-in turn detector — end-of-turn comes straight from the STT model instead of waiting on a separate generic turn detector, which reduces latency |
-| LLM | Qwen3 (via Groq) | Fast, cheap, instruct mode for simple slot-filling dialogue |
-| TTS | Soniox | Multilingual and cheap — one voice covers both US English and Parisian French natively. A bit slower than Cartesia, which is pricier and doesn't have a single voice spanning both languages |
+| STT/LLM/TTS (cascade) | Deepgram Flux / Qwen3 (via Groq) / Soniox | Default pipeline — see `agent-python/README.md` |
+| Speech-to-speech (in use) | OpenAI GPT-Live, via LiveKit Inference | Switched to this for the Python port: runs on LiveKit Cloud's free inference credits instead of a personal OpenAI key, lets me live-test a new full-duplex architecture instead of the cascaded pipeline, and measured end-to-end latency stays under 1.3s |
 | VAD | Silero | Interruption detection |
 | Observability | Langfuse (optional) | Per-session LLM/tool/STT/TTS trace export, alongside LiveKit Cloud's own Agent insights |
-| Backend | Node.js / TypeScript | `agent/` |
+| Backend | Python (`agent-python/`, active) / Node.js TypeScript (`agent/`, reference) | Migrated to Python — my main language |
 | Frontend | Next.js / React / TypeScript | `client/` |
 
 ## Known limitations & possible improvements

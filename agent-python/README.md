@@ -1,7 +1,8 @@
 # Meridian Academy — Voice Agent (Python)
 
 Python port of the LiveKit voice agent originally built in Node.js/TypeScript (see
-`../agent/`). Behavior is intentionally identical; the one deliberate addition is a
+`../agent/`). Migrated to Python because that's the language I use the most day to
+day. Behavior is intentionally identical; the one deliberate addition is a
 provider + pipeline abstraction layer (see [`docs/architecture.md`](docs/architecture.md))
 so STT/TTS/LLM providers, and the whole voice architecture (cascaded vs.
 speech-to-speech), can be swapped by config instead of by editing code.
@@ -78,10 +79,21 @@ Same providers as the TS version, now behind the `providers/` seam:
 - **Observability — Langfuse (optional)**, same env-var gating as the TS version.
 
 **Speech-to-speech alternative — OpenAI GPT-Live** (`providers/realtime.py`), via
-LiveKit Inference: no `OPENAI_API_KEY` needed, billed through `LIVEKIT_API_KEY`/
-`SECRET`. Backend reasoning model `gpt-5.6-luna` at `reasoning_effort="low"`, voice
-`marin`. Full-duplex (listens and speaks at once, decides its own turns) -- live-
-tested and working, with two things worth knowing before you rely on it:
+LiveKit Inference: no `OPENAI_API_KEY` needed, billed through LiveKit Cloud's free
+inference credits instead of my own OpenAI key. Backend reasoning model
+`gpt-5.6-luna` at `reasoning_effort="low"`, voice `marin`. Full-duplex (listens and
+speaks at once, decides its own turns) -- live-tested and working.
+
+Picked for this project specifically to:
+- **Try the free credits** — runs on LiveKit Cloud's inference billing rather than a
+  personal API key.
+- **Test a new architecture live** — full-duplex speech-to-speech is a different
+  model/architecture than the cascaded STT→LLM→TTS pipeline, worth exercising for
+  real rather than just reading about.
+- **Latency** — measured end-to-end latency stays under 1.3s in testing, which is
+  what made it worth switching to for this use case.
+
+Two things worth knowing before you rely on it:
 - **Transcript order**: full-duplex models emit a turn's transcript only *after* that
   turn's audio finishes, so a fast reply's transcript can post before the visitor's
   own. `signals/turn_pairing.py` works around this -- see
@@ -156,10 +168,7 @@ Same two layers as the TS version, per [LiveKit's testing guide](https://docs.li
 
 ## Deployment
 
-**Not yet deployed.** `Dockerfile` and `livekit.toml` are ready, but
-`livekit.toml`'s `[agent] id` currently points at the *same* agent id as the
-TypeScript version (`../agent/livekit.toml`) -- decide whether this Python agent
-replaces it or gets a new id before ever running `lk agent deploy` from here.
+Deployed to LiveKit Cloud (agent id `CA_4LkrcTEAmVNX`).
 
 ```bash
 lk cloud auth
