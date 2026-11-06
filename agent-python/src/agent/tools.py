@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 
 import aiohttp
 from livekit.agents import function_tool
@@ -16,6 +17,24 @@ logger = logging.getLogger("agent.tools")
 # Keeps references to fire-and-forget Slack-notification tasks so they aren't
 # garbage-collected mid-flight; each removes itself from this set when it finishes.
 _background_tasks: set[asyncio.Task[None]] = set()
+
+# Loose but real email shape check -- these values come from voice transcription
+# (LLM-extracted, not a form), so this is a sanity floor, not strict RFC validation.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+_MAX_FIELD_LEN = 200
+
+
+def _sanitize_for_slack(value: str) -> str:
+    """Escape Slack mrkdwn control characters and strip newlines/excess length.
+
+    Values here are LLM-extracted from a live voice conversation, not a trusted
+    form -- without this, a caller could inject Slack formatting, mentions
+    (`@channel`), or extra fake lines into the posted message.
+    """
+    value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    value = " ".join(value.split())  # collapses newlines/extra whitespace
+    return value[:_MAX_FIELD_LEN]
 
 
 @function_tool
@@ -40,6 +59,12 @@ async def notify_support_team(
         company_name: The visitor's company name, if provided.
         service_interest: The training program the visitor is interested in, if provided.
     """
+    if not _EMAIL_RE.match(work_email):
+        return (
+            "Rejected: that doesn't look like a valid email address -- ask the "
+            "visitor to repeat it."
+        )
+
     if not is_work_email(work_email):
         return (
             "Rejected: that is a personal email address. Only work email addresses "
@@ -53,9 +78,9 @@ async def notify_support_team(
 
     lines = [
         "New demo request",
-        f"Work email: {work_email}",
-        f"Company: {company_name}" if company_name else None,
-        f"Interested in: {service_interest}" if service_interest else None,
+        f"Work email: {_sanitize_for_slack(work_email)}",
+        f"Company: {_sanitize_for_slack(company_name)}" if company_name else None,
+        f"Interested in: {_sanitize_for_slack(service_interest)}" if service_interest else None,
     ]
     text = "\n".join(line for line in lines if line is not None)
 
